@@ -1,7 +1,7 @@
 # Current Project State & Session Handoff — Aufgaben-Detector
 
 > **Last Updated**: 2026-10-18  
-> **Active Milestone**: Milestone 3 — Open Source Release & GitHub Actions CI/CD (v1.0.0)
+> **Active Milestone**: Milestone 3 — Open Source Release & GitHub Actions CI/CD (v1.0.1)
 
 ---
 

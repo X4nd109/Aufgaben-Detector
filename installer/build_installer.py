@@ -207,8 +207,8 @@ def main():
     )
     parser.add_argument(
         "--version",
-        default="1.0.0",
-        help="Release version string (e.g. '1.0.0'). Defaults to 1.0.0.",
+        default="1.0.1",
+        help="Release version string (e.g. '1.0.1'). Defaults to 1.0.1.",
     )
     parser.add_argument(
         "--output-name",
