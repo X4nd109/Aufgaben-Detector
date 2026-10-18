@@ -164,6 +164,7 @@ async def login_to_digi4school(page: Page, email: str, password: str, timeout: i
     pass_sel = 'input[type="password"], input[autocomplete="current-password"], input[name="ion-input-1"]'
     await page.wait_for_selector(pass_sel, timeout=15000)
     await page.fill(pass_sel, password)
+    del password
 
     submit_sel = 'ion-button[type="submit"], button[type="submit"], ion-button:has-text("Anmelden")'
     submit_btn = await page.query_selector(submit_sel)
@@ -344,7 +345,7 @@ async def open_book_and_resolve_viewer(context, page: Page, book_item: dict, tim
 async def detect_total_pages(page: Page, viewer_base_url: str) -> Optional[int]:
     """Ermittelt die Gesamtzahl der Buchseiten aus dem Viewer."""
     await dismiss_popups(page)
-    await page.wait_for_timeout(1500)
+    await page.wait_for_timeout(2000)
 
     try:
         found_pages = await page.evaluate(r"""() => {
@@ -759,6 +760,7 @@ def apply_table_of_contents(
         except Exception:
             pass
 
+        total_links = 0
         scan_limit = min(15, len(doc))
         for page_idx in range(scan_limit):
             p = doc[page_idx]
@@ -793,9 +795,13 @@ def apply_table_of_contents(
                             hotspot = fitz.Rect(max(0, r.x0 - 5), r.y0 - 2, min(p.rect.width, r.x1 + 80), r.y1 + 2)
                             p.insert_link({
                                 "kind": fitz.LINK_GOTO,
-                                "page": target_pdf_pno - 1,
+                                "page": target_pdf_pno - 1, # 0-based
                                 "from": hotspot
                             })
+                            total_links += 1
+
+        if total_links > 0:
+            logger.info(f"{total_links} clickable hyperlinks created on TOC pages.")
 
 
 def detect_page_offset(raw_toc_items: List[dict], doc: fitz.Document) -> int:
@@ -896,8 +902,13 @@ def apply_page_labels(
 
     try:
         doc.set_page_labels(labels)
-    except Exception:
-        pass
+        label_summary = ", ".join(
+            f"{l.get('prefix', '')}{l.get('firstpagenum', 1)} ab Seite {l['startpage'] + 1}"
+            for l in labels
+        )
+        logger.info(f"PDF-Seitennummern synchronisiert (Offset +{page_offset}): {label_summary}")
+    except Exception as e:
+        logger.warning(f"Fehler beim Setzen der Page-Labels: {e}")
 
 
 class Digi4SchoolService:
@@ -916,16 +927,27 @@ class Digi4SchoolService:
         code: str,
         output_path: Optional[str] = None,
         pages: Optional[str] = None,
-        dpi: int = 300,
+        scale: float = 4.0,
+        quality: Optional[str] = None,
+        dpi: Optional[int] = None,
         psm: int = 3,
         lang: str = "deu+eng",
         timeout: int = 45,
         retries: int = 3,
+        no_ocr: bool = False,
+        no_toc: bool = False,
+        page_offset: str = "auto",
+        visible: bool = False,
+        tesseract_cmd: Optional[str] = None,
         progress_cb: Optional[Callable[[str, int, int, str], None]] = None,
         cancel_event: Optional[asyncio.Event] = None
     ) -> Dict[str, Any]:
         """
         Lädt ein Digi4School-Buch herunter und speichert es als durchsuchbare OCR-PDF.
+
+        Unterstützt Ultra-HD Standardauflösung (Scale 4.0, 600 DPI), automatische
+        DPI-Normierung, paralleles Multiprocessing für Tesseract, hierarchische Bookmarks
+        und synchronisierte PDF-Seitennummern (/PageLabels).
 
         progress_cb Signatur: progress_cb(phase, current_count, total_count, message_text)
         Phasen: 'login', 'resolving', 'pages', 'ocr', 'toc', 'saving', 'finished'
@@ -937,13 +959,24 @@ class Digi4SchoolService:
                 except Exception:
                     pass
 
+        # Quality Presets auflösen
+        if quality:
+            quality_map = {"standard": 2.0, "high": 3.0, "ultra": 4.0}
+            if quality in quality_map:
+                scale = quality_map[quality]
+
+        effective_dpi = dpi if dpi else int(150 * scale)
+
         clean_code = str(code).strip().lower()
         if not clean_code:
             raise ValueError("No access code provided.")
 
-        # 1. Tesseract prüfen (strikt verlangt gemäß User-Vorgabe)
-        tess_path = find_tesseract()
-        pytesseract.pytesseract.tesseract_cmd = tess_path
+        # 1. Tesseract prüfen wenn OCR aktiv ist
+        if not no_ocr:
+            tess_path = find_tesseract(custom_cmd=tesseract_cmd)
+            pytesseract.pytesseract.tesseract_cmd = tess_path
+        else:
+            tess_path = ""
 
         # 2. Output Path ermitteln
         if output_path:
@@ -959,12 +992,12 @@ class Digi4SchoolService:
         # 3. Playwright starten
         async with async_playwright() as p:
             browser = await p.chromium.launch(
-                headless=True,
+                headless=not visible,
                 args=["--disable-web-security", "--allow-running-insecure-content"]
             )
             context = await browser.new_context(
                 viewport={"width": 2000, "height": 3000},
-                device_scale_factor=2,
+                device_scale_factor=scale,
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             )
             page = await context.new_page()
@@ -1003,9 +1036,11 @@ class Digi4SchoolService:
                 if cancel_event and cancel_event.is_set():
                     raise asyncio.CancelledError("Download cancelled.")
 
-                # Inhaltsverzeichnis aus Viewer laden
-                update_progress("resolving", 0, 1, "Loading table of contents and page count...")
-                raw_toc_items = await extract_table_of_contents(active_page, viewer_base_url)
+                # Inhaltsverzeichnis aus Viewer laden (falls aktiv)
+                raw_toc_items = []
+                if not no_toc:
+                    update_progress("resolving", 0, 1, "Loading table of contents and page count...")
+                    raw_toc_items = await extract_table_of_contents(active_page, viewer_base_url)
 
                 # Gesamtseitenzahl ermitteln
                 detected_total = await detect_total_pages(active_page, viewer_base_url)
@@ -1052,55 +1087,70 @@ class Digi4SchoolService:
 
                 median_w = statistics.median([s[0] for s in page_sizes])
                 median_h = statistics.median([s[1] for s in page_sizes])
-                master_pt_w = (median_w / dpi) * 72.0
-                master_pt_h = (median_h / dpi) * 72.0
+                master_pt_w = (median_w / effective_dpi) * 72.0
+                master_pt_h = (median_h / effective_dpi) * 72.0
 
-                # OCR Verarbeitung
-                cpu_cores = os.cpu_count() or 4
-                max_workers = min(cpu_cores, 12)
-                ocr_tasks = [
-                    (p_num, img_bytes, lang, dpi, psm, tess_path)
-                    for p_num, img_bytes in downloaded_pages
-                ]
-
-                update_progress("ocr", 0, len(ocr_tasks), f"Starting OCR on {max_workers} CPU cores...")
-
-                ocr_results = {}
-                with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                    futures = {executor.submit(ocr_worker_process, t): t[0] for t in ocr_tasks}
-                    done_count = 0
-                    for future in as_completed(futures):
-                        if cancel_event and cancel_event.is_set():
-                            raise asyncio.CancelledError("Download cancelled.")
-                        p_num, pdf_page_bytes = future.result()
-                        ocr_results[p_num] = pdf_page_bytes
-                        done_count += 1
-                        update_progress("ocr", done_count, len(ocr_tasks), f"OCR recognition page {p_num} ({done_count}/{len(ocr_tasks)})...")
-
-                update_progress("toc", 0, 1, "Merging pages and creating bookmarks...")
                 target_doc = fitz.open()
 
-                for p_num, _ in downloaded_pages:
-                    page_pdf_bytes = ocr_results[p_num]
-                    src_page_doc = fitz.open("pdf", page_pdf_bytes)
-                    src_page = src_page_doc[0]
+                if no_ocr:
+                    update_progress("saving", 0, 1, "Creating uniform image PDF without OCR...")
+                    for p_num, img_bytes in downloaded_pages:
+                        new_p = target_doc.new_page(width=master_pt_w, height=master_pt_h)
+                        new_p.insert_image(new_p.rect, stream=img_bytes)
+                else:
+                    # OCR Verarbeitung
+                    cpu_cores = os.cpu_count() or 4
+                    max_workers = min(cpu_cores, 12)
+                    ocr_tasks = [
+                        (p_num, img_bytes, lang, effective_dpi, psm, tess_path)
+                        for p_num, img_bytes in downloaded_pages
+                    ]
 
-                    dest_page = target_doc.new_page(width=master_pt_w, height=master_pt_h)
-                    scale = min(master_pt_w / src_page.rect.width, master_pt_h / src_page.rect.height)
-                    pw = src_page.rect.width * scale
-                    ph = src_page.rect.height * scale
-                    x0 = (master_pt_w - pw) / 2.0
-                    y0 = (master_pt_h - ph) / 2.0
-                    dest_rect = fitz.Rect(x0, y0, x0 + pw, y0 + ph)
+                    update_progress("ocr", 0, len(ocr_tasks), f"Starting OCR on {max_workers} CPU cores (DPI {effective_dpi}, Scale {scale:g}x)...")
 
-                    dest_page.show_pdf_page(dest_rect, src_page_doc, 0)
-                    src_page_doc.close()
+                    ocr_results = {}
+                    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                        futures = {executor.submit(ocr_worker_process, t): t[0] for t in ocr_tasks}
+                        done_count = 0
+                        for future in as_completed(futures):
+                            if cancel_event and cancel_event.is_set():
+                                raise asyncio.CancelledError("Download cancelled.")
+                            p_num, pdf_page_bytes = future.result()
+                            ocr_results[p_num] = pdf_page_bytes
+                            done_count += 1
+                            update_progress("ocr", done_count, len(ocr_tasks), f"OCR recognition page {p_num} ({done_count}/{len(ocr_tasks)})...")
 
-                # Inhaltsverzeichnis & Hotspots
-                apply_table_of_contents(target_doc, raw_toc_items, downloaded_pages)
+                    update_progress("toc", 0, 1, "Merging pages into master layout...")
+                    for p_num, _ in downloaded_pages:
+                        page_pdf_bytes = ocr_results[p_num]
+                        src_page_doc = fitz.open("pdf", page_pdf_bytes)
+                        src_page = src_page_doc[0]
+
+                        dest_page = target_doc.new_page(width=master_pt_w, height=master_pt_h)
+                        fit_scale = min(master_pt_w / src_page.rect.width, master_pt_h / src_page.rect.height)
+                        pw = src_page.rect.width * fit_scale
+                        ph = src_page.rect.height * fit_scale
+                        x0 = (master_pt_w - pw) / 2.0
+                        y0 = (master_pt_h - ph) / 2.0
+                        dest_rect = fitz.Rect(x0, y0, x0 + pw, y0 + ph)
+
+                        dest_page.show_pdf_page(dest_rect, src_page_doc, 0)
+                        src_page_doc.close()
+
+                # Inhaltsverzeichnis & Hotspots (falls aktiv)
+                if not no_toc:
+                    update_progress("toc", 0, 1, "Applying table of contents and bookmarks...")
+                    apply_table_of_contents(target_doc, raw_toc_items, downloaded_pages)
 
                 # Page Labels (Seitennummern synchronisieren)
-                detected_offset = detect_page_offset(raw_toc_items, target_doc)
+                if page_offset == "auto":
+                    detected_offset = detect_page_offset(raw_toc_items, target_doc)
+                else:
+                    try:
+                        detected_offset = int(page_offset)
+                    except ValueError:
+                        detected_offset = 0
+
                 apply_page_labels(target_doc, detected_offset, downloaded_pages, front_prefix="U")
 
                 update_progress("saving", 0, 1, f"Saving PDF document ({out_file.name})...")
@@ -1117,7 +1167,11 @@ class Digi4SchoolService:
                     "path": str(out_file.resolve()),
                     "pages": len(downloaded_pages),
                     "size_mb": round(file_size_mb, 2),
-                    "offset": detected_offset
+                    "offset": detected_offset,
+                    "scale": scale,
+                    "dpi": effective_dpi,
+                    "ocr": not no_ocr,
+                    "toc": not no_toc
                 }
 
             finally:

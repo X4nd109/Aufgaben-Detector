@@ -51,7 +51,9 @@
 | `Generate Excuse PDF` | `btn_generate_excuse` | Erzeugt das druckfertige Entschuldigungsschreiben als PDF und öffnet den System-Betrachter. |
 | `Synchronize` | `[R]` / `btn_sync` | Startet den sofortigen Hintergrund-Abgleich mit Moodle, Teams und WebUntis. |
 | `Change Theme` | `[T]` / `Ctrl+P` | Rotiert durch die integrierten Farbthemen (Catppuccin Mocha, Nord, Dracula, Monokai). |
-| `Restore all` | `[W]` / `btn_trash_restore_all` | Stellt sämtliche ausgeblendeten Aufgaben auf einen Schlag wieder her. |
+| `Render Quality` | `digi_select_quality` | Wählt die Renderqualität im Digi4School-Download-Dialog (Ultra-HD 4.0x, High-Res 3.0x, Standard 2.0x). |
+| `Start Download` | `btn_start_digi_download` | Prüft Tesseract OCR und startet den automatisierten Digi4School Buchdownload. |
+| `Show in Downloads folder` | `btn_open_folder_d4s` | Öffnet den Downloads-Ordner nach erfolgreichem Buchdownload direkt im Windows Explorer. |
 
 ---
 
@@ -79,5 +81,5 @@
 | `tasks books list` | `--json` | Gibt alle verknüpften Schulbücher aus. |
 | `tasks books open <id>` | — | Startet das angegebene Schulbuch im OS-Standardviewer oder Webbrowser. |
 | `tasks books add <pfad>` | `--title <titel>` | Verknüpft eine lokale PDF-Datei oder Web-URL headless als Schulbuch. |
-| `tasks books download <code>` | `--email <m> --password <p>` | Lädt ein Digi4School-Buch im Terminal herunter und generiert das OCR-PDF. |
+| `tasks books download <code>` | `[--quality <q>] [--scale <s>] [--dpi <d>] [--no-ocr] [--no-toc] [--page-offset <o>] [--visible]` | Lädt ein Digi4School-Buch im Terminal herunter und generiert ein OCR-PDF (Ultra-HD Standard). |
 | `tasks sync` | `--deep` | Führt eine vollständige Plattform-Synchronisation im Hintergrund durch. |

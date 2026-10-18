@@ -52,15 +52,17 @@
   - Full headless CLI integration via `tasks books [list|open|add|remove] [--json]`.
   - 12 comprehensive unit and integration tests in `tests/test_schoolbooks.py`.
 
-- [x] **Digi4School Book Grabber Integration**:
+- [x] **Digi4School Book Grabber Integration (Ultra-HD & Adaptive DPI Update)**:
   - Eingebauter Download-Befehl `/download` (Aliase `/d4s`, `/digi4school`) direkt in der Schulbuch-Suchleiste (`Backspace` -> `Tab`).
   - Schnelleingabe mit Zugangscode (z. B. `/download 26s7dbu5qxvw`) oder über die interaktive Befehlsliste (`/`).
-  - Interaktiver Login-Dialog (`Digi4SchoolDownloadModal`) mit sofortiger Speicherbereinigung und Tesseract-OCR-Prüfung.
-  - Live `ProgressBar`-Modal (`Digi4SchoolProgressModal`) mit Statusanzeige (Login, Seiten laden, OCR, Lesezeichen), präziser Restzeitanzeige (ETA) und rotem Warnbanner.
-  - Generiert voll durchsuchbare OCR-Sandwich-PDFs mit Multi-Core LSTM Tesseract, Lesezeichen, Klick-Hyperlinks und synchronisierten Seitennummern.
+  - **Ultra-HD Resolution als Standard (`scale=4.0`)**: Playwright rendert Seiten in gestochen scharfer 4K/Retina-Auflösung (~3.600 × 5.200 px).
+  - **Adaptive DPI- & Geometrie-Normierung**: `effective_dpi = dpi or int(150 * scale)` skaliert auf 600 DPI bei Scale 4.0, während die physische PDF-Seitengröße (A4/B5) exakt erhalten bleibt.
+  - Interaktiver Login-Dialog (`Digi4SchoolDownloadModal`) mit sofortiger Speicherbereinigung (`del password`), Tesseract-OCR-Prüfung und nativer **Render Quality Auswahl** (`Select`: `Ultra-HD 4.0x`, `High-Res 3.0x`, `Standard 2.0x`).
+  - Live `ProgressBar`-Modal (`Digi4SchoolProgressModal`) mit Qualitäts-Badge (`QUALITY: ULTRA/HIGH/STANDARD`), Statusanzeige (Login, Seiten laden, OCR, Lesezeichen), präziser Restzeitanzeige (ETA) und rotem Warnbanner.
+  - Generiert voll durchsuchbare OCR-Sandwich-PDFs mit Multi-Core LSTM Tesseract, hierarchischen Lesezeichen, Klick-Hyperlinks und synchronisierten Seitennummern (/PageLabels).
   - Speichert das PDF direkt in `%USERPROFILE%\Downloads\` mit 1-Klick-Button zum Öffnen des Zielordners.
-  - Headless CLI-Integration via `tasks books download <code> [--email <mail>] [--password <pw>] [--json]`.
-  - 10 automatisierte Unit- und CLI-Tests in `tests/test_digi4school.py`.
+  - Erweiterte Headless CLI-Optionen: `tasks books download <code> [--email <mail>] [--password <pw>] [--scale <float>] [--quality standard|high|ultra] [--dpi <int>] [--no-ocr] [--no-toc] [--page-offset auto|<int>] [--visible] [--tesseract-cmd <path>] [--json]`.
+  - 13 automatisierte Unit- und CLI-Tests in `tests/test_digi4school.py` (100% Testabdeckung aller 182 Tests).
 
 - [x] **Full English Application Localization**:
   - Audited and translated all UI screens, modals, dialogs, buttons, table headers, toasts, and CLI outputs to consistent English.
@@ -98,26 +100,33 @@
 
 ## 3. Known Issues & Blockers
 
-- *None active* (All 179 test suite tests passing cleanly).
+- *None active* (All 182 test suite tests passing cleanly).
 
 ---
 
 ## 4. Session Handoff Notes (Context for Next Agent)
 
-- **Recent Achievements**:
-  - Full codebase privacy audit completed: stripped student email (`end240102`), local paths (`xandi`), and personal config data.
-  - Squashed Git history to clean root commit with GitHub private email attribution (`Alexander Endl <X4nd109@users.noreply.github.com>`), purging past diffs.
-  - Overhauled and translated [`README.md`](../README.md) to English with updated feature showcase, full CLI cheat-sheet, badges, legal disclaimer (§ 42 UrhG personal study only), and verified MIT License compatibility.
-  - Fixed GitHub Release URLs to point to active repository (`X4nd109/Aufgaben-Detector`).
-  - Integrated Digi4School grabber, schoolbooks palette quick-open, and unified course links.
-  - All 179 unit and integration tests passing with 100% pass rate.
-  - Repository is completely clean and prepared for public visibility transition on GitHub.
+- **Recent Achievements (2026-10-18)**:
+  - **Digi4School Grabber Sync & Ultra-HD Resolution Standard**:
+    - Ported all enhancements from standalone `Digi4School_Book_Grabber` into `src/services/digi4school_service.py`.
+    - Upgraded default rendering resolution to **Ultra-HD (`scale=4.0`)** via Playwright `device_scale_factor`.
+    - Coupled OCR DPI dynamically (`effective_dpi = dpi or int(150 * scale)` $\rightarrow$ 600 DPI @ 4.0x, 300 DPI @ 2.0x) while retaining standard A4/B5 PDF geometry.
+    - Added quality presets (`ultra`, `high`, `standard`), `--no-ocr` fast image fallback, `--no-toc`, and `--page-offset` controls.
+    - Hardened credential security via immediate in-memory password disposal (`del password`).
+  - **Interactive TUI Quality Dropdown**:
+    - Added native `Select` widget to `Digi4SchoolDownloadModal` for choosing render quality prior to download.
+    - Displayed active quality badge (`QUALITY: ULTRA/HIGH/STANDARD`) in `Digi4SchoolProgressModal`.
+  - **CLI & Test Coverage**:
+    - Enhanced `tasks books download` CLI flags (`--quality`, `--scale`, `--dpi`, `--no-ocr`, `--no-toc`, `--page-offset`, `--visible`).
+    - Added 3 new unit tests in `tests/test_digi4school.py` (total 13 tests, whole suite 182 tests with 100% pass rate).
+  - **Documentation & Architecture Records**:
+    - Added ADR-012 in `docs/decisions.md` and updated `docs/features.md`, `docs/architecture.md`, and `docs/current-state.md`.
 - **Localization Standard**:
   - All future UI elements, dialogs, modals, CLI outputs, toasts, and logging must be written in **English** (see `docs/conventions.md` & `ADR-010`). Only the generated excuse letter PDF remains in Austrian German.
 - **Entry Points**:
   - Desktop / Interactive: `run.bat` or `python main.py`
   - Agent / Script: `tasks.bat <subcommand>` or `python main.py <subcommand>`
-  - Digi4School CLI: `tasks books download <zugangscode> [--json]`
+  - Digi4School CLI: `tasks books download <zugangscode> [--quality ultra|high|standard] [--json]`
 - **Test Verification**:
   - Run all tests with `python -m unittest discover tests`.
 

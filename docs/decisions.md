@@ -160,5 +160,23 @@ This document records high-impact architectural choices, library selections, and
   - Positive: Eliminates developer friction, enables open-source contribution, prevents binary bloat in Git, and automates multi-version installer releases.
   - Negative: None; access control is no longer required for an open-source community tool.
 
+---
+
+## ADR-012: Ultra-HD DeviceScaleFactor & Adaptive DPI Normalization for Digi4School Grabber
+
+- **Date**: 2026-10-18
+- **Status**: Accepted
+- **Context**: Digital schoolbooks frequently contain fine vector graphics, mathematical symbols, and small typography. At standard resolution (scale 2.0), formulas appeared slightly blurry when zoomed in. Furthermore, users require flexibility to toggle OCR (e.g. for pure image archives), skip TOC extraction, customize quality presets, or manually adjust page numbering offsets.
+- **Decision**:
+  1. Set default Playwright `device_scale_factor` to **4.0** (Ultra-HD / Retina class) in `Digi4SchoolService`.
+  2. Implement dynamic DPI coupling (`effective_dpi = dpi if dpi else int(150 * scale)`), yielding 600 DPI for Scale 4.0 and 300 DPI for Scale 2.0.
+  3. Keep the physical PDF page size normalized to standard dimensions (A4/B5) by calculating `(median_px / effective_dpi) * 72.0` pt, so page size remains standard while embedded image sharpness is quadrupled.
+  4. Expose CLI flags in `tasks books download`: `--scale` (float), `--quality` (standard, high, ultra), `--dpi` (int), `--no-ocr`, `--no-toc`, `--page-offset` (auto or int), `--visible`, and `--tesseract-cmd`.
+  5. Add immediate in-memory password disposal (`del password`) right after filling authentication inputs for zero-knowledge safety.
+- **Consequences**:
+  - Positive: Crystal-clear 4K/Retina pages for reading on high-DPI tablets and monitors without PDF geometry distortion; versatile options for speed vs. quality.
+  - Negative: Higher RAM and processing overhead during parallel OCR when rendering at Ultra-HD (Scale 4.0), which can be tuned down with `--quality standard` when needed.
+
+
 
 

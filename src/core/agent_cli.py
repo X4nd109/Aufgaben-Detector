@@ -1099,6 +1099,18 @@ def handle_books_command(sub_args: List[str]) -> int:
         parser_d4s.add_argument("--password", default="", help="Digi4School Password")
         parser_d4s.add_argument("--output", "-o", default="", help="Target file path")
         parser_d4s.add_argument("--pages", "-p", default="", help="Page range (e.g. '1-50')")
+        parser_d4s.add_argument("--scale", type=float, default=4.0, help="Device scale factor (e.g. 4.0 for Ultra-HD, 2.0 for standard)")
+        parser_d4s.add_argument("--quality", choices=["standard", "high", "ultra"], default=None, help="Render quality preset: standard (2.0), high (3.0), ultra (4.0)")
+        parser_d4s.add_argument("--dpi", type=int, default=None, help="Custom DPI resolution (default: auto from scale, e.g. 600 at 4.0)")
+        parser_d4s.add_argument("--psm", type=int, default=3, help="Tesseract Page Segmentation Mode")
+        parser_d4s.add_argument("--lang", "-l", default="deu+eng", help="OCR language(s)")
+        parser_d4s.add_argument("--no-ocr", action="store_true", help="Skip OCR and generate image-only PDF")
+        parser_d4s.add_argument("--no-toc", action="store_true", help="Skip table of contents and bookmarks")
+        parser_d4s.add_argument("--page-offset", default="auto", help="Offset for page numbering ('auto' or integer)")
+        parser_d4s.add_argument("--visible", action="store_true", help="Show browser window during download")
+        parser_d4s.add_argument("--tesseract-cmd", default=None, help="Custom path to tesseract executable")
+        parser_d4s.add_argument("--timeout", type=int, default=45, help="Timeout per page in seconds")
+        parser_d4s.add_argument("--retries", type=int, default=3, help="Max retry attempts per page")
         d4s_args, _ = parser_d4s.parse_known_args(sub_args)
 
         email = d4s_args.email
@@ -1163,6 +1175,18 @@ def handle_books_command(sub_args: List[str]) -> int:
                     code=target,
                     output_path=d4s_args.output or None,
                     pages=d4s_args.pages or None,
+                    scale=d4s_args.scale,
+                    quality=d4s_args.quality,
+                    dpi=d4s_args.dpi,
+                    psm=d4s_args.psm,
+                    lang=d4s_args.lang,
+                    timeout=d4s_args.timeout,
+                    retries=d4s_args.retries,
+                    no_ocr=d4s_args.no_ocr,
+                    no_toc=d4s_args.no_toc,
+                    page_offset=d4s_args.page_offset,
+                    visible=d4s_args.visible,
+                    tesseract_cmd=d4s_args.tesseract_cmd,
                     progress_cb=cli_progress,
                 )
             )
@@ -1172,9 +1196,12 @@ def handle_books_command(sub_args: List[str]) -> int:
                 print(json.dumps(res, ensure_ascii=False, indent=2))
             else:
                 print(f"✓ Schoolbook '{res.get('title')}' successfully downloaded:")
-                print(f"  Path:  {res.get('path')}")
-                print(f"  Pages: {res.get('pages')}")
-                print(f"  Size:  {res.get('size_mb')} MB")
+                print(f"  Path:       {res.get('path')}")
+                print(f"  Pages:      {res.get('pages')}")
+                print(f"  Size:       {res.get('size_mb')} MB")
+                print(f"  Resolution: Scale {res.get('scale', 4.0):g}x ({res.get('dpi', 600)} DPI)")
+                print(f"  OCR:        {'Yes' if res.get('ocr') else 'No'}")
+                print(f"  TOC / Links:{'Yes' if res.get('toc') else 'No'}")
             return 0
         except Exception as e:
             if not args.json:

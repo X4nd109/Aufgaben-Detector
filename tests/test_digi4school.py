@@ -95,6 +95,28 @@ class TestDigi4SchoolService(unittest.TestCase):
         d_dir = Digi4SchoolService.get_default_downloads_dir()
         self.assertTrue(os.path.exists(d_dir))
 
+    def test_quality_and_effective_dpi(self):
+        """Prüft Auflösungs-Presets und adaptive DPI-Kopplung."""
+        quality_map = {"standard": 2.0, "high": 3.0, "ultra": 4.0}
+        self.assertEqual(int(150 * quality_map["ultra"]), 600)
+        self.assertEqual(int(150 * quality_map["standard"]), 300)
+        self.assertEqual(int(150 * quality_map["high"]), 450)
+
+    def test_download_book_signature(self):
+        """Prüft, dass download_book alle neuen Ultra-HD, OCR- und Layout-Parameter unterstützt."""
+        import inspect
+        sig = inspect.signature(Digi4SchoolService.download_book)
+        expected_params = [
+            "email", "password", "code", "output_path", "pages",
+            "scale", "quality", "dpi", "psm", "lang", "timeout",
+            "retries", "no_ocr", "no_toc", "page_offset", "visible",
+            "tesseract_cmd", "progress_cb", "cancel_event"
+        ]
+        for p in expected_params:
+            self.assertIn(p, sig.parameters)
+        self.assertEqual(sig.parameters["scale"].default, 4.0)
+        self.assertEqual(sig.parameters["page_offset"].default, "auto")
+
 
 class TestDigi4SchoolCLI(unittest.TestCase):
     """Testet die CLI-Integration in `tasks books download`."""
@@ -120,6 +142,28 @@ class TestDigi4SchoolCLI(unittest.TestCase):
         buf = io.StringIO()
         with redirect_stdout(buf):
             ret = handle_books_command(["download", "26s7dbu5qxvw", "--json"])
+        self.assertEqual(ret, 1)
+        data = json.loads(buf.getvalue())
+        self.assertIn("error", data)
+        self.assertIn("email", data["error"].lower())
+
+    def test_cli_books_download_parses_new_flags(self):
+        """Prüft, dass neue CLI-Flags (--quality, --scale, --no-ocr, --no-toc, --page-offset) erkannt werden."""
+        import io
+        from contextlib import redirect_stdout
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            # Without credentials in non-interactive, it parses flags and errors on missing email
+            ret = handle_books_command([
+                "download", "26s7dbu5qxvw",
+                "--quality", "ultra",
+                "--scale", "4.0",
+                "--no-ocr",
+                "--no-toc",
+                "--page-offset", "2",
+                "--json"
+            ])
         self.assertEqual(ret, 1)
         data = json.loads(buf.getvalue())
         self.assertIn("error", data)

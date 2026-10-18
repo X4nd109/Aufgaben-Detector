@@ -28,7 +28,7 @@ from textual.geometry import Size
 from textual.reactive import reactive
 from textual.screen import Screen, ModalScreen
 from textual.widget import Widget
-from textual.widgets import Button, DataTable, Header, Input, Label, Markdown, Static, TextArea, LoadingIndicator, ProgressBar
+from textual.widgets import Button, DataTable, Header, Input, Label, Markdown, Static, TextArea, LoadingIndicator, ProgressBar, Select
 from textual.command import CommandPalette, Provider, DiscoveryHit, Hit, Hits, CommandInput, SearchIcon, CommandList
 import urllib.parse
 
@@ -1885,6 +1885,10 @@ class Digi4SchoolDownloadModal(ModalScreen[Optional[dict]]):
         width: 100%;
         margin-bottom: 1;
     }
+    .digi_select {
+        width: 100%;
+        margin-bottom: 1;
+    }
     #digi_download_btn_row {
         height: auto;
         align: center middle;
@@ -1913,6 +1917,18 @@ class Digi4SchoolDownloadModal(ModalScreen[Optional[dict]]):
             yield Input(placeholder="Password", password=True, id="digi_input_password", classes="digi_input")
             yield Label("12-Digit Book Access Code:", classes="digi_input_label")
             yield Input(value=self.initial_code, placeholder="e.g. 26s7dbu5qxvw", id="digi_input_code", classes="digi_input")
+            yield Label("Render Quality:", classes="digi_input_label")
+            yield Select(
+                options=[
+                    ("Ultra-HD (Scale 4.0x, ~600 DPI) [Sharpest]", "ultra"),
+                    ("High-Res (Scale 3.0x, ~450 DPI) [Balanced]", "high"),
+                    ("Standard (Scale 2.0x, ~300 DPI) [Fast]", "standard"),
+                ],
+                value="ultra",
+                allow_blank=False,
+                id="digi_select_quality",
+                classes="digi_select",
+            )
             with Horizontal(id="digi_download_btn_row"):
                 yield Button("Start Download", variant="success", id="btn_start_digi_download")
                 yield Button("Cancel", variant="default", id="btn_cancel_digi_download")
@@ -1941,6 +1957,8 @@ class Digi4SchoolDownloadModal(ModalScreen[Optional[dict]]):
         email = self.query_one("#digi_input_email", Input).value.strip()
         password = self.query_one("#digi_input_password", Input).value.strip()
         code = self.query_one("#digi_input_code", Input).value.strip()
+        quality_sel = self.query_one("#digi_select_quality", Select)
+        quality = quality_sel.value if quality_sel.value != Select.NULL else "ultra"
 
         if not email:
             self.notify("Please enter your Digi4School email address.", severity="warning")
@@ -1963,7 +1981,7 @@ class Digi4SchoolDownloadModal(ModalScreen[Optional[dict]]):
             )
             return
 
-        self.dismiss({"email": email, "password": password, "code": code})
+        self.dismiss({"email": email, "password": password, "code": code, "quality": str(quality)})
 
 
 class Digi4SchoolProgressModal(ModalScreen[Optional[dict]]):
@@ -2031,11 +2049,12 @@ class Digi4SchoolProgressModal(ModalScreen[Optional[dict]]):
         Binding("escape", "cancel_or_close", "Schließen"),
     ]
 
-    def __init__(self, email: str, password: str, code: str) -> None:
+    def __init__(self, email: str, password: str, code: str, quality: str = "ultra") -> None:
         super().__init__()
         self.email = email
         self.password = password
         self.code = code
+        self.quality = quality
         self.download_result: Optional[dict] = None
         self._cancel_async_event: Optional[asyncio.Event] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -2064,7 +2083,8 @@ class Digi4SchoolProgressModal(ModalScreen[Optional[dict]]):
             yield Label("📥 Digi4School Book Download", id="d4s_prog_title")
             yield Label("⚠️ Do not open Digi4School in your browser during download!", id="d4s_warning_banner")
             yield ProgressBar(total=100, show_eta=False, show_percentage=True, id="d4s_pbar")
-            yield Label("Initializing download...", id="d4s_status_lbl")
+            quality_badge = f"[bold #f9e2af]{self.quality.upper()}[/]"
+            yield Label(f"Quality: {quality_badge} | Initializing download...", id="d4s_status_lbl")
             yield Label("Please wait...", id="d4s_detail_lbl")
             yield Label("⏳ Calculating remaining time...", id="d4s_eta_lbl")
             with Horizontal(id="d4s_prog_btn_row"):
@@ -2092,6 +2112,7 @@ class Digi4SchoolProgressModal(ModalScreen[Optional[dict]]):
                     email=self.email,
                     password=self.password,
                     code=self.code,
+                    quality=self.quality,
                     progress_cb=progress_callback,
                     cancel_event=self._cancel_async_event,
                 )
@@ -5999,6 +6020,7 @@ class AufgabenDetectorApp(App):
                         email=res["email"],
                         password=res["password"],
                         code=res["code"],
+                        quality=res.get("quality", "ultra"),
                     )
                 )
             else:

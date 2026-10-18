@@ -242,14 +242,14 @@ The Digi4School subsystem (`src/services/digi4school_service.py`) enables automa
 
 ```mermaid
 flowchart TD
-    A["User triggers /download <code>"] --> B["Digi4SchoolDownloadModal (Email, Password, Code)"]
+    A["User triggers /download <code>"] --> B["Digi4SchoolDownloadModal (Email, Password, Code, Quality)"]
     B --> C["Tesseract Detection Check"]
     C -->|Missing| D["Notify Error with winget Command"]
     C -->|Found| E["Spawn Digi4SchoolProgressModal"]
     E --> F["Async Worker Thread"]
     F --> G["Playwright Login to digi4school.at"]
     G --> H["Resolve Viewer & Publisher Redirects (e.g. a.hpthek.at)"]
-    H --> I["Capture High-Res Pages into RAM"]
+    H --> I["Capture Ultra-HD Pages into RAM (Scale 4.0x / 600 DPI)"]
     I --> J["Parallel Multi-Core Tesseract OCR (ProcessPoolExecutor)"]
     J --> K["Fit & Center on Master Dimensions"]
     K --> L["Embed Hierarchical TOC Outline & In-Page Click Links"]
@@ -258,5 +258,6 @@ flowchart TD
     N --> O["UI Success: 1-Click Open Folder Button"]
 ```
 
+- **Ultra-HD Resolution & Adaptive DPI Coupling**: Renders pages by default with Playwright's `device_scale_factor = 4.0` and dynamically couples OCR DPI via `effective_dpi = int(150 * scale)` (600 DPI standard), keeping standard A4/B5 physical geometry while quadrupling zoom sharpness. Supports quick presets (`ultra`, `high`, `standard`) and pure image archives (`--no-ocr`).
 - **Live ETA & Progress Calculation**: Real-time progress updates are reported via thread-safe callbacks to the TUI and CLI. The remaining time (ETA) estimates both active page rendering and multi-core OCR throughput based on dynamic elapsed-time rates.
 
