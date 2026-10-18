@@ -1,0 +1,56 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments & IDEs
+.venv/
+venv/
+ENV/
+.env
+.idea/
+.vscode/
+.agents/
+
+# Credentials & Sensitive User Data (NEVER TRACK IN GIT)
+config.json
+custom_*.json
+deleted_*.json
+exam_*.json
+hidden_*.json
+*credentials*.json
+*session_cookies*.json
+teams_status.json
+data/*
+!data/.gitignore
+cache/
+schoolbooks.json
+data/schoolbooks.json
+aufgaben_detector_schoolbooks.json
+*.png
+*.log
+
+# Local Browser Profiles & Sync Repos
+teams_browser_profile/
+untis_browser_profile/
+git_sync_repo/
+*.key
+license.json
+
+# Binaries & Build Output
+installer/python_installer.exe
+installer/dist/
+installer/build/
+installer/_temp_build_*.iss
+.build_*/
+dist/
+build/
+*.exe
+
+# Machine-specific caches & Scratch
+scratch/
+Thumbs.db
+.DS_Store
+.first_run_completed
+.last_cli_tasks.json
+aufgaben_detector_*.json

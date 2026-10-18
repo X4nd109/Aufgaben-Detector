@@ -1,0 +1,1189 @@
+"""
+agent_cli.py - Token-effiziente, blitzschnelle Befehlszeilen-Schnittstelle
+speziell für autonome KI-Agenten und Terminal-Skripte.
+
+Unterstützt sowohl Subcommands (`tasks list`) als auch Flags (`tasks -list` / `tasks --list`).
+Liest standardmäßig sofort den lokalen Cache (< 0.1s) und minimiert Token-Verbrauch.
+"""
+
+import argparse
+import datetime
+import json
+import os
+import sys
+import time
+import re
+import webbrowser
+from typing import List, Optional, Tuple
+
+from config import CONFIG_DIR, extract_teacher, normalize_subject_name, load_all_course_links
+from models import Task
+from task_manager import TaskManager, parse_deadline_for_sorting
+
+LAST_CLI_TASKS_FILE = os.path.join(CONFIG_DIR, ".last_cli_tasks.json")
+
+
+def _score_course_match(course: dict, q: str) -> float:
+    """Berechnet einen Relevanz-Score für einen Kurs basierend auf der Suchanfrage."""
+    subj = (course.get("subject") or "").lower().strip()
+    title = (course.get("display_title") or course.get("fullname") or "").lower().strip()
+    badge = (course.get("display_badge") or "").lower().strip()
+    full_text = f"{badge} {subj} {title}"
+
+    # 1. Exakter Match auf Fachkürzel (z.B. "sesd" == "sesd")
+    if subj == q:
+        return 100.0
+
+    # 2. Fachkürzel startet mit Query (z.B. "ses" in "sesd" oder "am" in "amec")
+    if subj.startswith(q):
+        return 85.0
+
+    # 3. Query im Fachkürzel enthalten
+    if q in subj:
+        return 75.0
+
+    # 4. Exaktes Wort im Titel (z.B. "security" in "Security Software Development")
+    if re.search(rf"\b{re.escape(q)}\b", title):
+        return 65.0
+
+    # 5. Titel startet mit Query
+    if title.startswith(q):
+        return 60.0
+
+    # 6. Query als Teilstring im Titel
+    if q in title:
+        return 50.0
+
+    # 7. Query im Volltext (z.B. Plattformname wie "teams" oder "moodle")
+    if q in full_text:
+        return 40.0
+
+    # 8. Fuzzy Match: Alle Zeichen der Query kommen der Reihe nach im Titel/Kürzel vor
+    pos = 0
+    matched_chars = 0
+    for char in q:
+        idx = full_text.find(char, pos)
+        if idx != -1:
+            matched_chars += 1
+            pos = idx + 1
+        else:
+            break
+    if matched_chars == len(q) and len(q) >= 2:
+        return 20.0 + (len(q) / max(len(full_text), 1)) * 10.0
+
+    return 0.0
+
+
+def _load_raw_moodle_courses() -> List[dict]:
+    """Lädt ungefilterte Moodle-Kurse aus dem Cache als Fallback."""
+    from config import MOODLE_BASE_URL, ASSETS_DIR
+    cache_path = os.path.join(CONFIG_DIR, "moodle_courses_cache.json")
+    if not os.path.exists(cache_path):
+        fallback_p = os.path.join(ASSETS_DIR, "default_courses.json")
+        if os.path.exists(fallback_p):
+            cache_path = fallback_p
+        else:
+            return []
+    try:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                res = []
+                for mc in data:
+                    cid = str(mc.get("id", ""))
+                    if not cid:
+                        continue
+                    res.append({
+                        "platform": "moodle",
+                        "display_badge": "[Moodle]",
+                        "subject": mc.get("subject", ""),
+                        "display_title": mc.get("fullname", f"Moodle Kurs #{cid}"),
+                        "url": mc.get("url") or f"{MOODLE_BASE_URL}/course/view.php?id={cid}",
+                        "is_current_class": False,
+                    })
+                return res
+    except Exception:
+        pass
+    return []
+
+
+def find_best_course_match(query: str) -> Tuple[Optional[dict], List[dict]]:
+    """
+    Sucht den passendsten Kurs für die gegebene Suchanfrage (Fachkürzel, Name oder Stichwort).
+    Priorisiert Treffer wie die TUI-Befehlspalette.
+    Gibt (bester_treffer, alle_treffer_sortiert) zurück.
+    """
+    q = query.strip().lower()
+    if not q:
+        return None, []
+
+    courses = load_all_course_links()
+    scored_matches: List[Tuple[float, dict]] = []
+
+    for c in courses:
+        score = _score_course_match(c, q)
+        if score > 0:
+            scored_matches.append((score, c))
+
+    # Fallback: Falls in den gefilterten Kursen kein starker Treffer (Score >= 50) gefunden wurde,
+    # im Moodle-Rohcache nach exakten oder besseren Treffern suchen
+    has_strong_match = any(score >= 50.0 for score, _ in scored_matches)
+    if not has_strong_match:
+        raw_moodle = _load_raw_moodle_courses()
+        seen_urls = {item[1].get("url") for item in scored_matches}
+        for c in raw_moodle:
+            if c.get("url") in seen_urls:
+                continue
+            score = _score_course_match(c, q)
+            if score > 0:
+                scored_matches.append((score, c))
+
+    scored_matches.sort(key=lambda x: x[0], reverse=True)
+    sorted_courses = [item[1] for item in scored_matches]
+    best = sorted_courses[0] if sorted_courses else None
+    return best, sorted_courses
+
+
+def format_courses_list_text(courses: List[dict]) -> str:
+    """Kompakte, token-effiziente Kursliste."""
+    if not courses:
+        return "No courses found."
+    lines = []
+    lines.append(f"{'#':<4} {'PLATFORM':<11} {'SUBJECT':<10} {'COURSE NAME'}")
+    lines.append("-" * 75)
+    for i, c in enumerate(courses, 1):
+        p = c.get("platform", "moodle").capitalize()
+        s = (c.get("subject") or "-")[:9]
+        title = (c.get("display_title") or c.get("fullname") or "").replace("\n", " ").strip()
+        if len(title) > 48:
+            title = title[:46] + "…"
+        lines.append(f"{i:<4} {p:<11} {s:<10} {title}")
+    lines.append("-" * 75)
+    lines.append(f"Total: {len(courses)} course(s). Open any course with: tasks open <fach>")
+    return "\n".join(lines)
+
+
+def format_courses_list_json(courses: List[dict]) -> str:
+    """Kompakte JSON-Ausgabe der Kursliste."""
+    data = []
+    for i, c in enumerate(courses, 1):
+        data.append({
+            "index": i,
+            "platform": c.get("platform", "moodle"),
+            "subject": c.get("subject", ""),
+            "title": c.get("display_title") or c.get("fullname") or "",
+            "url": c.get("url", ""),
+        })
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def save_last_cli_task_ids(task_ids: List[str]) -> None:
+    """Speichert die zuletzt aufgelisteten Task-IDs für stabile 1-basierte Indexierung."""
+    try:
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        with open(LAST_CLI_TASKS_FILE, "w", encoding="utf-8") as f:
+            json.dump(task_ids, f)
+    except Exception:
+        pass
+
+
+def load_last_cli_task_ids() -> List[str]:
+    """Lädt die zuletzt aufgelisteten Task-IDs."""
+    if os.path.exists(LAST_CLI_TASKS_FILE):
+        try:
+            with open(LAST_CLI_TASKS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return [str(x) for x in data]
+        except Exception:
+            pass
+    return []
+
+
+def resolve_task(mgr: TaskManager, target: str) -> Optional[Task]:
+    """
+    Löst eine Aufgaben-Referenz auf:
+    1. Numerischer 1-basierter Index aus der letzten `tasks list` Abfrage
+    2. Exakte Task-ID
+    3. Prefix- / Teilstring-Treffer auf Task-ID
+    """
+    target = target.strip()
+    if not target:
+        return None
+
+    # 1. Numerischer Index
+    if target.isdigit():
+        idx = int(target)
+        last_ids = load_last_cli_task_ids()
+        if last_ids and 1 <= idx <= len(last_ids):
+            target_id = last_ids[idx - 1]
+            task = next((t for t in mgr.tasks if t.id == target_id), None)
+            if task:
+                return task
+            deleted_task = next((t for t in mgr.get_deleted_tasks() if t.id == target_id), None)
+            if deleted_task:
+                return deleted_task
+
+        # Fallback wenn keine last_cli_tasks existieren
+        active = mgr.get_filtered_tasks(status_filter="all", timeframe_filter="all")
+        if 1 <= idx <= len(active):
+            return active[idx - 1]
+
+    # 2. Exakte ID in aktiven Aufgaben
+    for t in mgr.tasks:
+        if t.id == target:
+            return t
+
+    # 3. Exakte ID in gelöschten Aufgaben
+    for t in mgr.get_deleted_tasks():
+        if t.id == target:
+            return t
+
+    # 4. Präfix-Suche in aktiven Aufgaben
+    target_lower = target.lower()
+    for t in mgr.tasks:
+        if t.id.lower().startswith(target_lower):
+            return t
+
+    # 5. Präfix-Suche in gelöschten Aufgaben
+    for t in mgr.get_deleted_tasks():
+        if t.id.lower().startswith(target_lower):
+            return t
+
+    # 6. Fallback: Substring-Suche
+    for t in mgr.tasks:
+        if target_lower in t.id.lower():
+            return t
+
+    return None
+
+
+def format_task_list_text(tasks: List[Task], total_count: int, status_filter: str) -> str:
+    """Token-effiziente, schnörkellose Text-Tabelle."""
+    if not tasks:
+        return f"No tasks found matching filter (status='{status_filter}', total in cache={total_count})."
+
+    # Tabellenkopf
+    lines = []
+    lines.append(f"{'#':<4} {'ID':<24} {'SUBJECT':<8} {'DUE DATE':<18} {'STATUS':<11} {'TITLE'}")
+    lines.append("-" * 86)
+
+    for i, t in enumerate(tasks, 1):
+        # Kompakter Status
+        if t.is_completed:
+            st = "Done"
+        elif t.is_overdue:
+            st = "Overdue"
+        elif t.is_due_soon:
+            st = "Soon"
+        else:
+            st = "Open"
+
+        # Frist kürzen falls zu lang
+        due = t.due_date_str
+        if len(due) > 16:
+            due = due[:15] + "…"
+
+        course = t.course[:7] if t.course else "-"
+        t_id = t.id[:23] if len(t.id) > 23 else t.id
+        title = t.title.replace("\n", " ").strip()
+        if len(title) > 60:
+            title = title[:58] + "…"
+
+        lines.append(f"{i:<4} {t_id:<24} {course:<8} {due:<18} {st:<11} {title}")
+
+    lines.append("-" * 86)
+    open_count = len([t for t in tasks if not t.is_completed and not t.is_overdue])
+    overdue_count = len([t for t in tasks if t.is_overdue])
+    done_count = len([t for t in tasks if t.is_completed])
+    lines.append(f"Listed {len(tasks)} task(s) | Open: {open_count} | Overdue: {overdue_count} | Done: {done_count} | Total cached: {total_count}")
+    return "\n".join(lines)
+
+
+def format_task_list_json(tasks: List[Task]) -> str:
+    """Kompaktes JSON für Aufgabenliste."""
+    data = []
+    for i, t in enumerate(tasks, 1):
+        data.append({
+            "index": i,
+            "id": t.id,
+            "platform": t.platform,
+            "course": t.course,
+            "course_full": t.course_full,
+            "title": t.title,
+            "due": t.due_date_str,
+            "due_timestamp": t.due_timestamp,
+            "status": "completed" if t.is_completed else ("overdue" if t.is_overdue else "open"),
+            "status_display": t.status_display,
+            "teacher": t.teacher,
+            "url": t.url,
+            "attachments_count": len(t.attachments) if t.attachments else 0,
+        })
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def format_task_detail_text(task: Task, mgr: TaskManager) -> str:
+    """Detaillierte, token-effiziente Textausgabe."""
+    lines = []
+    lines.append(f"Title:       {task.title}")
+    lines.append(f"ID:          {task.id}")
+    lines.append(f"Subject:     {task.course} ({task.course_full})")
+    lines.append(f"Teacher:     {task.teacher or '-'}")
+    lines.append(f"Platform:    {task.platform}")
+    
+    status_label = "Completed" if task.is_completed else ("Overdue" if task.is_overdue else "Open")
+    lines.append(f"Status:      {status_label} ({task.status_display})")
+    lines.append(f"Due Date:    {task.due_date_str}")
+    if task.url:
+        lines.append(f"URL:         {task.url}")
+    if task.download_dir:
+        lines.append(f"Folder:      {task.download_dir}")
+
+    # Attachments
+    if task.attachments:
+        lines.append("Attachments:")
+        for att in task.attachments:
+            size_info = f" ({att.size})" if att.size else ""
+            lines.append(f"  - {att.name}{size_info}: {att.url}")
+    else:
+        lines.append("Attachments: None")
+
+    # Beschreibung
+    lines.append("\nDescription:")
+    desc = (task.description or "").strip()
+    if desc:
+        lines.append(desc)
+    else:
+        lines.append("(No description provided)")
+
+    return "\n".join(lines)
+
+
+def format_guide_text() -> str:
+    """Kompakter Agent-Leitfaden mit minimalem Token-Footprint."""
+    return """# Aufgaben Detector - Agent CLI Reference
+
+Fast (<0.1s offline cache) & token-efficient CLI designed for AI agents.
+
+## Commands
+  tasks list [-s open|all|completed|overdue] [-f SUBJECT] [-p moodle|teams|manual] [--json]
+    List assignments from local cache.
+    Flags:
+      -s, --status    Filter: open (default), all, completed, overdue
+      -f, --subject   Filter by subject abbreviation (e.g. AM, SEW, D)
+      -p, --platform  Filter platform: all, moodle, teams, manual
+      --sync          Force live sync before listing
+      --json          Output structured JSON
+
+  tasks show <id|index> [--json]
+    Show full description, links, and attachments for a task.
+    Supports either Task ID (e.g. 'moodle_10421') or 1-based index (e.g. '1').
+
+  tasks download <id|index> [--dir PATH] [--json]
+    Download attachments & assignment markdown for the task.
+    Returns the absolute paths of all saved files for immediate reading.
+
+  tasks add --title "..." --subject "..." [--due "..."] [--teacher "..."] [--desc "..."] [--json]
+    Create a manual homework task directly from CLI.
+
+  tasks open <fach> [--json]
+    Open a Moodle or Teams course in the browser (e.g. 'tasks open sesd' or 'tasks open mathe').
+    Picks the top matching course (just like Backspace search in the TUI).
+
+  tasks courses [--json]
+    List all available Moodle and Teams courses with abbreviations.
+
+  tasks done <id|index> [--json]
+    Toggle completed/open state of an assignment.
+
+  tasks delete <id|index> [--json]
+    Hide or delete an assignment from active list.
+
+  tasks restore <id|index> [--json]
+    Restore a hidden/deleted assignment.
+
+  tasks sync [--deep] [--json]
+    Perform live network sync with Moodle & Teams in background/terminal.
+
+  tasks guide
+    Print this reference guide.
+
+## Shorthand Flags
+  All commands can also be called as flags:
+  `tasks -list`, `tasks --list`, `tasks -open sesd`, `tasks -courses`, `tasks -show 1`, `tasks -sync`
+"""
+
+
+def normalize_argv(argv: List[str]) -> List[str]:
+    """
+    Normalisiert gemischte Eingabesyntax:
+    `tasks -list` -> `tasks list`
+    `tasks --list` -> `tasks list`
+    `tasks -open sesd` -> `tasks open sesd`
+    `tasks -courses` -> `tasks courses`
+    `tasks -show 1` -> `tasks show 1`
+    `tasks --show 1` -> `tasks show 1`
+    `tasks -sync` -> `tasks sync`
+    `tasks --sync` -> `tasks sync`
+    `tasks -download 1` -> `tasks download 1`
+    `tasks --download 1` -> `tasks download 1`
+    `tasks -add ...` -> `tasks add ...`
+    `tasks -done 1` -> `tasks done 1`
+    `tasks -delete 1` -> `tasks delete 1`
+    `tasks -restore 1` -> `tasks restore 1`
+    `tasks -guide` -> `tasks guide`
+    `tasks -json` -> `tasks list --json`
+    """
+    if not argv:
+        return []
+
+    norm = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        lower = arg.lower()
+
+        # Sonderfall: Reines `--json` ohne Command -> `list --json`
+        if lower in ["--json", "-json"] and i == 0:
+            norm.append("list")
+            norm.append("--json")
+            i += 1
+            continue
+
+        # Flag-Präfixe zu Subcommands konvertieren
+        flag_to_cmd = {
+            "--list": "list", "-list": "list",
+            "--show": "show", "-show": "show",
+            "--get": "show", "-get": "show",
+            "--view": "show", "-view": "show",
+            "--download": "download", "-download": "download",
+            "--dl": "download", "-dl": "download",
+            "--add": "add", "-add": "add",
+            "--done": "done", "-done": "done",
+            "--complete": "done", "-complete": "done",
+            "--toggle": "done", "-toggle": "done",
+            "--delete": "delete", "-delete": "delete",
+            "--remove": "delete", "-remove": "delete",
+            "--restore": "restore", "-restore": "restore",
+            "--sync": "sync", "-sync": "sync",
+            "--guide": "guide", "-guide": "guide",
+            "--help": "guide", "-help": "guide", "-h": "guide",
+            "--open": "open", "-open": "open",
+            "--course": "open", "-course": "open",
+            "--courses": "courses", "-courses": "courses",
+        }
+
+        if i == 0 and lower in flag_to_cmd:
+            norm.append(flag_to_cmd[lower])
+        else:
+            norm.append(arg)
+        i += 1
+
+    return norm
+
+
+def is_agent_cli_command(argv: List[str]) -> bool:
+    """Ermittelt, ob der Programmaufruf ein Agent-CLI-Befehl ist."""
+    if not argv:
+        return False
+
+    first = argv[0].lower()
+    known_commands = {
+        "list", "ls", "show", "get", "view", "info",
+        "download", "dl", "fetch",
+        "add", "new", "create",
+        "done", "complete", "toggle",
+        "delete", "del", "remove", "rm", "hide",
+        "restore", "unhide", "undelete",
+        "sync", "guide", "agent-guide", "help",
+        "open", "course", "courses", "courselist",
+        "books", "book", "schulbuch", "schulbücher"
+    }
+
+    if first in known_commands:
+        return True
+
+    # Flag-Versionen
+    flag_prefixes = [
+        "-list", "--list", "-show", "--show", "-get", "--get",
+        "-download", "--download", "-dl", "--dl",
+        "-add", "--add", "-done", "--done", "-toggle", "--toggle",
+        "-delete", "--delete", "-restore", "--restore",
+        "-sync", "--sync", "-guide", "--guide", "--json", "-json",
+        "-help", "--help", "-h",
+        "-open", "--open", "-courses", "--courses", "-course", "--course",
+        "-books", "--books", "-book", "--book"
+    ]
+    return any(first.startswith(p) for p in flag_prefixes)
+
+
+def run_agent_cli(argv: List[str]) -> int:
+    """Haupt-Dispatcher für alle Agent-CLI-Befehle."""
+    norm_argv = normalize_argv(argv)
+    if not norm_argv:
+        print(format_guide_text())
+        return 0
+
+    command = norm_argv[0].lower()
+    sub_args = norm_argv[1:]
+
+    # ─────────────────────────────────────────────────────────────────
+    # 1. GUIDE / HELP
+    # ─────────────────────────────────────────────────────────────────
+    if command in ["guide", "agent-guide", "help"]:
+        print(format_guide_text())
+        return 0
+
+    # ─────────────────────────────────────────────────────────────────
+    # 2. SYNC
+    # ─────────────────────────────────────────────────────────────────
+    if command == "sync":
+        parser = argparse.ArgumentParser(prog="tasks sync", add_help=False)
+        parser.add_argument("--deep", action="store_true", help="Perform deep course scan")
+        parser.add_argument("--json", action="store_true", help="JSON output")
+        args, _ = parser.parse_known_args(sub_args)
+
+        mgr = TaskManager(autostart_prefetch=False)
+        if not args.json:
+            print("Syncing live from Moodle and Teams...")
+        m_cnt, t_cnt = mgr.sync(deep_scan=args.deep, start_prefetch=False)
+
+        if args.json:
+            print(json.dumps({
+                "success": True,
+                "moodle_tasks": m_cnt,
+                "teams_tasks": t_cnt,
+                "total_cached": len(mgr.tasks),
+                "timestamp": time.time()
+            }, ensure_ascii=False))
+        else:
+            print(f"✓ Synced successfully: {m_cnt} Moodle tasks, {t_cnt} Teams tasks (Total: {len(mgr.tasks)}).")
+        return 0
+
+    # ─────────────────────────────────────────────────────────────────
+    # COURSES (List all courses)
+    # ─────────────────────────────────────────────────────────────────
+    if command in ["courses", "courselist"]:
+        parser = argparse.ArgumentParser(prog="tasks courses", add_help=False)
+        parser.add_argument("--json", action="store_true", help="Output as JSON")
+        args, _ = parser.parse_known_args(sub_args)
+
+        courses = load_all_course_links()
+        if args.json:
+            print(format_courses_list_json(courses))
+        else:
+            print(format_courses_list_text(courses))
+        return 0
+
+    # ─────────────────────────────────────────────────────────────────
+    # OPEN (Open course in browser)
+    # ─────────────────────────────────────────────────────────────────
+    if command in ["open", "course", "launch"]:
+        parser = argparse.ArgumentParser(prog=f"tasks {command}", add_help=False)
+        parser.add_argument("target", nargs="?", default="", help="Course abbreviation or name (e.g. 'sesd')")
+        parser.add_argument("--json", action="store_true", help="Output as JSON")
+        parser.add_argument("--no-browse", action="store_true", help="Do not open browser (print URL only)")
+        args, remaining = parser.parse_known_args(sub_args)
+
+        target = args.target or (remaining[0] if remaining else "")
+        if not target:
+            # Fallback: Keine Argumente -> Liste aller Kurse anzeigen
+            courses = load_all_course_links()
+            if args.json:
+                print(format_courses_list_json(courses))
+            else:
+                print(format_courses_list_text(courses))
+            return 0
+
+        best_course, all_matches = find_best_course_match(target)
+        if not best_course:
+            msg = f"Error: No course found matching '{target}'. Use 'tasks courses' to list available courses."
+            if args.json:
+                print(json.dumps({"error": msg, "query": target}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        url = best_course.get("url", "")
+        title = best_course.get("display_title") or best_course.get("fullname") or target
+        badge = best_course.get("display_badge") or f"[{best_course.get('platform', 'course').capitalize()}]"
+
+        if not args.no_browse and url:
+            try:
+                import webbrowser
+                webbrowser.open(url)
+            except Exception:
+                pass
+
+        if args.json:
+            print(json.dumps({
+                "success": True,
+                "platform": best_course.get("platform", "moodle"),
+                "subject": best_course.get("subject", ""),
+                "title": title,
+                "url": url,
+            }, ensure_ascii=False, indent=2))
+        else:
+            print(f"✓ Opening {badge} '{title}' in browser...")
+            print(f"URL: {url}")
+        return 0
+
+    # TaskManager ohne Hintergrund-Prefetch initialisieren für sofortige Rückgabe
+    mgr = TaskManager(autostart_prefetch=False)
+
+    # ─────────────────────────────────────────────────────────────────
+    # 3. LIST
+    # ─────────────────────────────────────────────────────────────────
+    if command in ["list", "ls"]:
+        parser = argparse.ArgumentParser(prog="tasks list", add_help=False)
+        parser.add_argument("-s", "--status", default="open", choices=["open", "all", "completed", "overdue"], help="Status filter")
+        parser.add_argument("-f", "--subject", default=None, help="Subject filter")
+        parser.add_argument("-p", "--platform", default="all", choices=["all", "moodle", "teams", "manual"], help="Platform filter")
+        parser.add_argument("-t", "--timeframe", default="all", help="Timeframe (all, 1_week, 2_weeks, 4_weeks)")
+        parser.add_argument("-q", "--search", default=None, help="Search keyword")
+        parser.add_argument("--include-deleted", action="store_true", help="Include hidden tasks")
+        parser.add_argument("--sync", action="store_true", help="Live sync before listing")
+        parser.add_argument("--json", action="store_true", help="Output as JSON")
+        args, _ = parser.parse_known_args(sub_args)
+
+        if args.sync:
+            mgr.sync(deep_scan=False, start_prefetch=False)
+
+        # Mapping status filter
+        status_map = {
+            "open": "open_only",
+            "all": "all",
+            "completed": "completed",
+            "overdue": "overdue",
+        }
+        internal_status = status_map.get(args.status, "open_only")
+
+        filtered_tasks = mgr.get_filtered_tasks(
+            platform_filter=args.platform,
+            status_filter=internal_status,
+            subject_filter=args.subject,
+            search_query=args.search,
+            include_deleted=args.include_deleted,
+            timeframe_filter=args.timeframe
+        )
+
+        # Zuletzt aufgelistete IDs speichern für stabile Indexierung
+        save_last_cli_task_ids([t.id for t in filtered_tasks])
+
+        if args.json:
+            print(format_task_list_json(filtered_tasks))
+        else:
+            print(format_task_list_text(filtered_tasks, len(mgr.tasks), args.status))
+        return 0
+
+    # ─────────────────────────────────────────────────────────────────
+    # 4. SHOW / GET / VIEW
+    # ─────────────────────────────────────────────────────────────────
+    if command in ["show", "get", "view", "info"]:
+        parser = argparse.ArgumentParser(prog=f"tasks {command}", add_help=False)
+        parser.add_argument("target", nargs="?", default="", help="Task ID or 1-based index")
+        parser.add_argument("--json", action="store_true", help="Output as JSON")
+        parser.add_argument("--sync", action="store_true", help="Fetch remote details live if missing")
+        args, remaining = parser.parse_known_args(sub_args)
+
+        target = args.target or (remaining[0] if remaining else "")
+        if not target:
+            msg = "Error: Please provide a Task ID or list index. Example: 'tasks show 1' or 'tasks show moodle_12345'"
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        task = resolve_task(mgr, target)
+        if not task:
+            msg = f"Error: Task '{target}' not found."
+            if args.json:
+                print(json.dumps({"error": msg, "target": target}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        # Details nachladen falls noch nicht vorhanden
+        if not task.details_loaded or args.sync:
+            try:
+                mgr.load_task_details(task)
+            except Exception as e:
+                pass
+
+        if args.json:
+            print(json.dumps(task.to_dict(), ensure_ascii=False, indent=2))
+        else:
+            print(format_task_detail_text(task, mgr))
+        return 0
+
+    # ─────────────────────────────────────────────────────────────────
+    # 5. DOWNLOAD
+    # ─────────────────────────────────────────────────────────────────
+    if command in ["download", "dl", "fetch"]:
+        parser = argparse.ArgumentParser(prog=f"tasks {command}", add_help=False)
+        parser.add_argument("target", nargs="?", default="", help="Task ID or 1-based index")
+        parser.add_argument("--dir", default=None, help="Destination folder")
+        parser.add_argument("--json", action="store_true", help="Output as JSON")
+        args, remaining = parser.parse_known_args(sub_args)
+
+        target = args.target or (remaining[0] if remaining else "")
+        if not target:
+            msg = "Error: Please provide a Task ID or list index to download. Example: 'tasks download 1'"
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        task = resolve_task(mgr, target)
+        if not task:
+            msg = f"Error: Task '{target}' not found."
+            if args.json:
+                print(json.dumps({"error": msg, "target": target}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        try:
+            files = mgr.download_task_files(task, dest_dir=args.dir)
+        except Exception as e:
+            msg = f"Error during download: {e}"
+            if args.json:
+                print(json.dumps({"error": msg, "target": target}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        if args.json:
+            print(json.dumps({
+                "success": True,
+                "id": task.id,
+                "title": task.title,
+                "folder": task.download_dir or args.dir,
+                "files": files
+            }, ensure_ascii=False, indent=2))
+        else:
+            print(f"✓ Downloaded {len(files)} file(s) for '{task.title}':")
+            for f in files:
+                print(f"  - {f}")
+            folder = task.download_dir or args.dir or "-"
+            print(f"Folder: {folder}")
+        return 0
+
+    # ─────────────────────────────────────────────────────────────────
+    # 6. ADD
+    # ─────────────────────────────────────────────────────────────────
+    if command in ["add", "new", "create"]:
+        parser = argparse.ArgumentParser(prog="tasks add", add_help=False)
+        parser.add_argument("--title", "-t", required=False, help="Assignment title")
+        parser.add_argument("--subject", "-s", required=False, help="Subject (e.g. AM, SEW, D)")
+        parser.add_argument("--due", "-d", default="No deadline", help="Due date (e.g. '15.10. 23:59')")
+        parser.add_argument("--teacher", default="", help="Teacher abbreviation (e.g. BIM)")
+        parser.add_argument("--desc", "--description", default="", help="Optional description")
+        parser.add_argument("--json", action="store_true", help="Output as JSON")
+        args, _ = parser.parse_known_args(sub_args)
+
+        if not args.title or not args.subject:
+            msg = "Error: --title and --subject are required. Example: tasks add --title \"Mathe HÜ\" --subject \"AM\" --due \"15.10. 23:59\""
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        clean_sub = normalize_subject_name(args.subject)
+        teacher = args.teacher
+        if not teacher:
+            teacher = extract_teacher("", clean_sub, args.title, args.desc)
+            if teacher == "-":
+                teacher = ""
+
+        new_task = Task(
+            id=f"manual_{int(time.time() * 1000)}",
+            platform="manual",
+            course=clean_sub,
+            course_full=args.subject,
+            title=args.title,
+            due_date_str=args.due or "No deadline",
+            status="open",
+            status_display="Open",
+            url="",
+            teacher=teacher,
+            description=args.desc,
+            details_loaded=True,
+            due_timestamp=parse_deadline_for_sorting(args.due),
+        )
+        mgr.add_task(new_task)
+
+        if args.json:
+            print(json.dumps({
+                "success": True,
+                "task": new_task.to_dict()
+            }, ensure_ascii=False, indent=2))
+        else:
+            print(f"✓ Added assignment '{new_task.title}' (ID: {new_task.id}, Subject: {new_task.course}, Due: {new_task.due_date_str})")
+        return 0
+
+    # ─────────────────────────────────────────────────────────────────
+    # 7. DONE / COMPLETE / TOGGLE
+    # ─────────────────────────────────────────────────────────────────
+    if command in ["done", "complete", "toggle"]:
+        parser = argparse.ArgumentParser(prog=f"tasks {command}", add_help=False)
+        parser.add_argument("target", nargs="?", default="", help="Task ID or 1-based index")
+        parser.add_argument("--json", action="store_true", help="Output as JSON")
+        args, remaining = parser.parse_known_args(sub_args)
+
+        target = args.target or (remaining[0] if remaining else "")
+        if not target:
+            msg = f"Error: Please provide a Task ID or index to mark as done. Example: 'tasks done 1'"
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        task = resolve_task(mgr, target)
+        if not task:
+            msg = f"Error: Task '{target}' not found."
+            if args.json:
+                print(json.dumps({"error": msg, "target": target}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        updated = mgr.toggle_task_status(task.id)
+        if not updated:
+            msg = f"Error: Could not update task '{task.id}'."
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        state = "Completed" if updated.is_completed else "Open"
+        if args.json:
+            print(json.dumps({
+                "success": True,
+                "id": updated.id,
+                "title": updated.title,
+                "completed": updated.is_completed,
+                "status": updated.status,
+                "status_display": updated.status_display
+            }, ensure_ascii=False))
+        else:
+            print(f"✓ Task '{updated.title}' ({updated.id}) is now marked as: {state}")
+        return 0
+
+    # ─────────────────────────────────────────────────────────────────
+    # 8. DELETE / REMOVE / HIDE
+    # ─────────────────────────────────────────────────────────────────
+    if command in ["delete", "del", "remove", "rm", "hide"]:
+        parser = argparse.ArgumentParser(prog=f"tasks {command}", add_help=False)
+        parser.add_argument("target", nargs="?", default="", help="Task ID or 1-based index")
+        parser.add_argument("--json", action="store_true", help="Output as JSON")
+        args, remaining = parser.parse_known_args(sub_args)
+
+        target = args.target or (remaining[0] if remaining else "")
+        if not target:
+            msg = f"Error: Please provide a Task ID or index to delete/hide. Example: 'tasks delete 1'"
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        task = resolve_task(mgr, target)
+        if not task:
+            msg = f"Error: Task '{target}' not found."
+            if args.json:
+                print(json.dumps({"error": msg, "target": target}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        mgr.delete_task(task.id)
+
+        if args.json:
+            print(json.dumps({
+                "success": True,
+                "id": task.id,
+                "title": task.title,
+                "deleted": True
+            }, ensure_ascii=False))
+        else:
+            print(f"✓ Task '{task.title}' ({task.id}) hidden/deleted. (Restore with: tasks restore {task.id})")
+        return 0
+
+    # ─────────────────────────────────────────────────────────────────
+    # 9. RESTORE / UNHIDE
+    # ─────────────────────────────────────────────────────────────────
+    if command in ["restore", "unhide", "undelete"]:
+        parser = argparse.ArgumentParser(prog=f"tasks {command}", add_help=False)
+        parser.add_argument("target", nargs="?", default="", help="Task ID or 1-based index")
+        parser.add_argument("--json", action="store_true", help="Output as JSON")
+        args, remaining = parser.parse_known_args(sub_args)
+
+        target = args.target or (remaining[0] if remaining else "")
+        if not target:
+            msg = f"Error: Please provide a Task ID or index to restore. Example: 'tasks restore moodle_12345'"
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        task = resolve_task(mgr, target)
+        task_id = task.id if task else target
+
+        restored = mgr.restore_task(task_id)
+        if args.json:
+            print(json.dumps({
+                "success": restored,
+                "id": task_id,
+                "restored": restored
+            }, ensure_ascii=False))
+        else:
+            if restored:
+                print(f"✓ Task '{task_id}' restored to active list.")
+            else:
+                print(f"Notice: Task '{task_id}' was not in hidden/deleted list.")
+        return 0
+
+    # ─────────────────────────────────────────────────────────────────
+    # 10. SCHOOLBOOKS (PDF & Web)
+    # ─────────────────────────────────────────────────────────────────
+    if command in ["books", "book", "schulbuch", "schulbücher"]:
+        return handle_books_command(sub_args)
+
+    # Unbekannter Befehl
+    print(f"Unknown command: '{command}'. Use 'tasks guide' or 'tasks --help' for available commands.")
+    return 1
+
+
+def handle_books_command(sub_args: List[str]) -> int:
+    """Manages and opens schoolbooks via CLI."""
+    parser = argparse.ArgumentParser(prog="tasks books", add_help=False)
+    parser.add_argument("action", nargs="?", default="list", help="list, open, add, remove, download")
+    parser.add_argument("target", nargs="?", default="", help="Book title, ID, index, file path, web URL, or access code")
+    parser.add_argument("--title", "-t", default="", help="Title for the book (optional for PDF)")
+    parser.add_argument("--json", action="store_true", help="JSON output")
+    args, remaining = parser.parse_known_args(sub_args)
+
+    try:
+        from schoolbook_service import SchoolbookService
+    except ImportError:
+        from src.services.schoolbook_service import SchoolbookService
+
+    action = (args.action or "list").lower()
+    target = args.target or (remaining[0] if remaining else "")
+
+    # If first parameter is not an action, but a search query or index to open:
+    if action not in ["list", "ls", "open", "add", "remove", "rm", "delete", "download", "grab", "d4s", "digi", "digi4school"]:
+        target = args.action
+        action = "open"
+
+    books = SchoolbookService.load_books()
+
+    if action in ["list", "ls"]:
+        if args.json:
+            print(json.dumps({"books": books, "count": len(books)}, ensure_ascii=False, indent=2))
+        else:
+            if not books:
+                print("No schoolbooks linked. Link one with: tasks books add <path|url>")
+            else:
+                print(f"=== Schoolbooks ({len(books)} linked) ===")
+                for idx, b in enumerate(books, 1):
+                    badge = "[PDF]" if b.get("type") == "pdf" else "[WEB]"
+                    print(f"[{idx}] {badge} {b.get('title')}")
+                    print(f"    Path/URL: {b.get('path')}")
+        return 0
+
+    if action == "open":
+        if not target:
+            msg = "Error: Please specify a book title, ID, or index. Example: 'tasks books open 1'"
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        selected_book = None
+        if target.isdigit():
+            idx = int(target) - 1
+            if 0 <= idx < len(books):
+                selected_book = books[idx]
+
+        if not selected_book:
+            selected_book = SchoolbookService.find_book(target)
+
+        if not selected_book:
+            msg = f"Error: Schoolbook '{target}' not found."
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        ok, msg = SchoolbookService.open_book(selected_book)
+        if args.json:
+            print(json.dumps({"success": ok, "message": msg, "book": selected_book}, ensure_ascii=False))
+        else:
+            print(f"{'✓' if ok else '✗'} {msg}")
+        return 0 if ok else 1
+
+    if action == "add":
+        if not target:
+            msg = "Error: Please provide a path to a PDF file or a URL. Example: 'tasks books add C:\\book.pdf'"
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        is_url = target.startswith("http://") or target.startswith("https://")
+        if is_url:
+            book = SchoolbookService.add_web_book(target, title=args.title)
+        else:
+            if not os.path.exists(target):
+                msg = f"Error: File '{target}' does not exist."
+                if args.json:
+                    print(json.dumps({"error": msg}, ensure_ascii=False))
+                else:
+                    print(msg)
+                return 1
+            book = SchoolbookService.add_pdf_book(target, title=args.title)
+
+        if args.json:
+            print(json.dumps({"success": True, "book": book}, ensure_ascii=False))
+        else:
+            print(f"✓ Schoolbook '{book.get('title')}' successfully linked.")
+        return 0
+
+    if action in ["remove", "rm", "delete"]:
+        if not target:
+            msg = "Error: Please specify a book to remove."
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        target_id = target
+        if target.isdigit():
+            idx = int(target) - 1
+            if 0 <= idx < len(books):
+                target_id = books[idx].get("id", target)
+
+        ok = SchoolbookService.remove_book(target_id)
+        if args.json:
+            print(json.dumps({"success": ok, "target": target}, ensure_ascii=False))
+        else:
+            if ok:
+                print(f"✓ Schoolbook '{target}' removed.")
+            else:
+                print(f"Error: Schoolbook '{target}' not found.")
+        return 0 if ok else 1
+
+    if action in ["download", "grab", "d4s", "digi", "digi4school"]:
+        if not target:
+            msg = "Error: Please specify a 12-digit access code. Example: 'tasks books download 26s7dbu5qxvw'"
+            if args.json:
+                print(json.dumps({"error": msg, "success": False}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        parser_d4s = argparse.ArgumentParser(prog="tasks books download", add_help=False)
+        parser_d4s.add_argument("--email", default="", help="Digi4School Email")
+        parser_d4s.add_argument("--password", default="", help="Digi4School Password")
+        parser_d4s.add_argument("--output", "-o", default="", help="Target file path")
+        parser_d4s.add_argument("--pages", "-p", default="", help="Page range (e.g. '1-50')")
+        d4s_args, _ = parser_d4s.parse_known_args(sub_args)
+
+        email = d4s_args.email
+        password = d4s_args.password
+
+        if not email:
+            if sys.stdin.isatty():
+                email = input("Digi4School Email: ").strip()
+            else:
+                msg = "Error: No email provided (--email required)."
+                if args.json:
+                    print(json.dumps({"error": msg, "success": False}, ensure_ascii=False))
+                else:
+                    print(msg)
+                return 1
+
+        if not password:
+            if sys.stdin.isatty():
+                import getpass
+                password = getpass.getpass("Digi4School Password: ")
+            else:
+                msg = "Error: No password provided (--password required)."
+                if args.json:
+                    print(json.dumps({"error": msg, "success": False}, ensure_ascii=False))
+                else:
+                    print(msg)
+                return 1
+
+        try:
+            from digi4school_service import Digi4SchoolService
+        except ImportError:
+            from src.services.digi4school_service import Digi4SchoolService
+
+        import asyncio
+        import time
+
+        t0 = time.time()
+        phase_start = [t0]
+        curr_phase = [""]
+
+        def cli_progress(phase, cur, tot, msg_txt):
+            if not args.json:
+                now = time.time()
+                if phase != curr_phase[0]:
+                    curr_phase[0] = phase
+                    phase_start[0] = now
+                eta_str = ""
+                if phase in ("pages", "ocr") and cur > 0 and tot > 0:
+                    el = now - phase_start[0]
+                    rate = cur / max(0.001, el)
+                    rem = (tot - cur) / max(0.001, rate)
+                    m, s = divmod(int(rem), 60)
+                    eta_str = f" [ETA: {m:02d}:{s:02d}]"
+                sys.stdout.write(f"\r[{phase}] {msg_txt}{eta_str}            ")
+                sys.stdout.flush()
+
+        try:
+            res = asyncio.run(
+                Digi4SchoolService.download_book(
+                    email=email,
+                    password=password,
+                    code=target,
+                    output_path=d4s_args.output or None,
+                    pages=d4s_args.pages or None,
+                    progress_cb=cli_progress,
+                )
+            )
+            if not args.json:
+                sys.stdout.write("\n")
+            if args.json:
+                print(json.dumps(res, ensure_ascii=False, indent=2))
+            else:
+                print(f"✓ Schoolbook '{res.get('title')}' successfully downloaded:")
+                print(f"  Path:  {res.get('path')}")
+                print(f"  Pages: {res.get('pages')}")
+                print(f"  Size:  {res.get('size_mb')} MB")
+            return 0
+        except Exception as e:
+            if not args.json:
+                sys.stdout.write("\n")
+            msg = f"Error during download: {e}"
+            if args.json:
+                print(json.dumps({"error": msg, "success": False}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+    return 0

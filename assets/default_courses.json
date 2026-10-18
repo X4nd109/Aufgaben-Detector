@@ -1,0 +1,186 @@
+[
+  {
+    "id": "9650",
+    "fullname": "AMEC - Angewandte Mechatronik - 1AHWII - SJ2425",
+    "shortname": "AMEC_1AHWII_2425",
+    "subject": "AMEC",
+    "grade_level": 1,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=9650"
+  },
+  {
+    "id": "11160",
+    "fullname": "AMEC - Angewandte Mechatronik - 2AHWII - SJ2526",
+    "shortname": "AMEC_2AHWII_2526",
+    "subject": "AMEC",
+    "grade_level": 2,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=11160"
+  },
+  {
+    "id": "12233",
+    "fullname": "AMEC - Angewandte Mechatronik - 3AHWII - SJ2627",
+    "shortname": "AMEC_3AHWII_2627",
+    "subject": "AMEC",
+    "grade_level": 3,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=12233"
+  },
+  {
+    "id": "11393",
+    "fullname": "BET - Betriebstechnik - 2AHWII - SJ2526",
+    "shortname": "BET_2AHWII_2526",
+    "subject": "BET",
+    "grade_level": 2,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=11393"
+  },
+  {
+    "id": "12564",
+    "fullname": "BET - Betriebstechnik - 3AHWII - SJ2627",
+    "shortname": "BET_3AHWII_2627",
+    "subject": "BET",
+    "grade_level": 3,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=12564"
+  },
+  {
+    "id": "10242",
+    "fullname": "INFIx - Informatik und Informationssysteme - 1AHWII - SJ2425",
+    "shortname": "INFIx_1AHWII_2425",
+    "subject": "INFIx",
+    "grade_level": 1,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=10242"
+  },
+  {
+    "id": "10141",
+    "fullname": "MTx - Mechanische Technologie - 1AHWII - SJ2425",
+    "shortname": "MTx_1AHWII_2425",
+    "subject": "MTx",
+    "grade_level": 1,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=10141"
+  },
+  {
+    "id": "11321",
+    "fullname": "MTx - Mechanische Technologie - 2AHWII - SJ2526",
+    "shortname": "MTx_2AHWII_2526",
+    "subject": "MTx",
+    "grade_level": 2,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=11321"
+  },
+  {
+    "id": "9649",
+    "fullname": "NW - Naturwissenschaften (Physik) - 1AHWII  SJ2425",
+    "shortname": "NW_PH_1AHWII_2425",
+    "subject": "NW",
+    "grade_level": 1,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=9649"
+  },
+  {
+    "id": "12067",
+    "fullname": "NW - Naturwissenschaften (Physik) - 3AHWII - SJ2627",
+    "shortname": "NW_PH_3AHWII_2627",
+    "subject": "NW",
+    "grade_level": 3,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=12067"
+  },
+  {
+    "id": "11371",
+    "fullname": "NW2 - Naturwissenschaften - 2AHWII - SJ2526",
+    "shortname": "NW2_2AHWII_2526",
+    "subject": "NW2",
+    "grade_level": 2,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=11371"
+  },
+  {
+    "id": "12162",
+    "fullname": "NW2 - Naturwissenschaften Chemie - 3AHWII - SJ2627",
+    "shortname": "NW2_3AHWII_2627",
+    "subject": "NW2",
+    "grade_level": 3,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=12162"
+  },
+  {
+    "id": "10071",
+    "fullname": "NWES1 - Netzwerke und Embedded Systems - 1AHWII - SJ2425",
+    "shortname": "NWES1_1AHWII_2425",
+    "subject": "NWES1",
+    "grade_level": 1,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=10071"
+  },
+  {
+    "id": "11440",
+    "fullname": "NWES2 - Netzwerke und Embedded Systems - 2AHWII - SJ2526",
+    "shortname": "NWES2_2AHWII_2526",
+    "subject": "NWES2",
+    "grade_level": 2,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=11440"
+  },
+  {
+    "id": "11856",
+    "fullname": "SESD - Security Software Development - 3AHWII - SJ2627",
+    "shortname": "SESD_3AHWII_2627",
+    "subject": "SESD",
+    "grade_level": 3,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=11856"
+  },
+  {
+    "id": "12234",
+    "fullname": "SMENy - Smart Mechanical Engineering - 3AHWII - SJ2627",
+    "shortname": "SMENy_3AHWII_2627",
+    "subject": "SMENy",
+    "grade_level": 3,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=12234"
+  },
+  {
+    "id": "12549",
+    "fullname": "SPL - Smart Production Lab - 3AHWII - SJ2627 - KRD",
+    "shortname": "SPL_3AHWII_2627_KRD",
+    "subject": "SPL",
+    "grade_level": 3,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=12549"
+  },
+  {
+    "id": "12418",
+    "fullname": "SWP - Softwareentwicklung u. Projektmanagement - 3AHWII - SJ2627 - BIM_EIJ",
+    "shortname": "SWP_3AHWII_SJ2627_PM",
+    "subject": "SWP",
+    "grade_level": 3,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=12418"
+  },
+  {
+    "id": "10155",
+    "fullname": "SWPx - Sofwareentwicklung und Projektmanagement - 1AHWII - SJ2425",
+    "shortname": "SWPx_1AHWII__2425",
+    "subject": "SWPx",
+    "grade_level": 1,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=10155"
+  },
+  {
+    "id": "10160",
+    "fullname": "WEPT - Elektrotechnik - Labor - 1AHWII - SJ2425",
+    "shortname": "WEPT_Elektrotechnik_1AHWII_2425",
+    "subject": "WEPT",
+    "grade_level": 1,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=10160"
+  },
+  {
+    "id": "11287",
+    "fullname": "Wept - Elektrotechniklabor - 2AHWII - SJ2526",
+    "shortname": "Wept_2AHWII_2526",
+    "subject": "Wept",
+    "grade_level": 2,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=11287"
+  },
+  {
+    "id": "11324",
+    "fullname": "WEPT - Werkstätte -  2AHWII - SJ2526 - WOF",
+    "shortname": "WEPT_2AHWII_2526_WOF",
+    "subject": "WEPT",
+    "grade_level": 2,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=11324"
+  },
+  {
+    "id": "11139",
+    "fullname": "WEPT-Werkstätte und Produktionstechnik - BS/NWT - 2AHWII - SJ2526",
+    "shortname": "WEPT_BS/NWT2_AHWII_2526",
+    "subject": "WEPT",
+    "grade_level": 2,
+    "url": "https://moodle.spengergasse.at/course/view.php?id=11139"
+  }
+]

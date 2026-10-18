@@ -1,0 +1,14 @@
+{
+  "theme": "nord",
+  "moodle_base_url": "https://moodle.example.edu",
+  "untis_url": "https://mese.webuntis.com/WebUntis/?school=beispiel-schule",
+  "untis_group": "X",
+  "untis_school": "beispiel-schule",
+  "excuse_profile": {
+    "student_name": "Max Mustermann",
+    "student_class": "1AHIT",
+    "teacher_name": "Prof. Erika Musterlehrer",
+    "school_address": "Musterstraße 1",
+    "school_district": "A-1010 Wien"
+  }
+}
