@@ -33,6 +33,7 @@
 | [`docs/architecture.md`](docs/architecture.md) | Components (`src/core`, `services`, `ui`), data flows, caching (`<0.1s`), data models | When modifying system modules, APIs, caching, or data models |
 | [`docs/conventions.md`](docs/conventions.md) | Code style, zero-knowledge rules, CLI token-efficiency, test guidelines | When writing code, adding CLI commands, or refactoring |
 | [`docs/decisions.md`](docs/decisions.md) | Architecture Decision Records (ADRs: Playwright, Textual, Untis JSON-RPC, Licensing) | Before altering architectural patterns or tech choices |
+| [`docs/features.md`](docs/features.md) | UI-Elemente, Button-Namen, Feature-Katalog & Terminologie | Wenn UI-Komponenten, Button-Aktionen oder Features besprochen/bearbeitet werden |
 
 ---
 
