@@ -94,13 +94,14 @@ Aufgaben Detector/
 │   ├── core/                   # System core & data management
 │   │   ├── agent_cli.py        # Token-efficient headless CLI engine
 │   │   ├── auth.py             # Interactive authentication handlers
-│   │   ├── config.py           # Paths, color palettes & normalization
-│   │   ├── license.py          # Hardware fingerprinting & license check
+│   │   ├── config.py           # Paths, color palettes, favorite themes & normalization
+│   │   ├── dependency_checker.py # Pre-flight module checker & warning banner
+│   │   ├── license.py          # Legacy hardware fingerprinting / compatibility
 │   │   ├── models.py           # Dataclass definitions
 │   │   └── task_manager.py     # Central aggregation & caching coordinator
 │   ├── services/               # External portal integration adapters
 │   │   ├── excuse_service.py   # PDF absence excuse generator
-│   │   ├── git_sync_service.py # Multi-device repository sync
+│   │   ├── git_sync_service.py # Multi-device repository sync (including favorites)
 │   │   ├── moodle_service.py   # Moodle scraping & REST API
 │   │   ├── schoolbook_service.py # Schoolbook indexing, opening & file picker
 │   │   ├── digi4school_service.py # Digi4School book downloader, OCR & TOC generator
@@ -111,7 +112,8 @@ Aufgaben Detector/
 │       └── ui.py               # Rich terminal rendering utilities
 ├── tests/                      # Automated test suite (pytest / unittest)
 │   ├── test_schoolbooks.py     # Unit tests for schoolbooks & git isolation
-│   └── test_digi4school.py     # Unit tests for Digi4School downloader & CLI
+│   ├── test_digi4school.py     # Unit tests for Digi4School downloader & CLI
+│   └── test_dependency_checker.py # Unit tests for pre-flight dependency checker
 ├── AGENTS.md                   # Tier 1 master documentation index (< 3 KB)
 ├── config.json                 # User configuration file
 ├── config.example.json         # Reference configuration template

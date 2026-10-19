@@ -177,6 +177,20 @@ This document records high-impact architectural choices, library selections, and
   - Positive: Crystal-clear 4K/Retina pages for reading on high-DPI tablets and monitors without PDF geometry distortion; versatile options for speed vs. quality.
   - Negative: Higher RAM and processing overhead during parallel OCR when rendering at Ultra-HD (Scale 4.0), which can be tuned down with `--quality standard` when needed.
 
+---
 
+## ADR-013: Pre-Flight Dependency Checker, PyMuPDF Modernization & Theme Favorite Sync
 
-
+- **Date**: 2026-10-19
+- **Status**: Accepted
+- **Context**: 
+  1. If optional or mandatory dependencies from `requirements.txt` were uninstalled or missing, the application previously fell back silently to the legacy CLI, confusing users who expected the modern Textual TUI.
+  2. Legacy `import fitz` triggered a noisy `FutureWarning` deprecation warning from PyMuPDF v1.25+.
+  3. Expanding the theme palette from 5 to 21 themes required a way to quickly access favorite themes, which also needed to sync seamlessly across multiple devices via Git Sync.
+- **Decision**:
+  1. **Pre-Flight Checker (`src/core/dependency_checker.py`)**: Implement a zero-dependency module check before launching the TUI. When requirements are missing, render a structured ASCII warning box with the exact Windows installation command (`python -m pip install -r requirements.txt`) and an interactive `[Y/n]` prompt to install via pip automatically.
+  2. **PyMuPDF Modernization**: Standardize imports to `try: import pymupdf as fitz except ImportError: import fitz` across all services (`digi4school_service.py`, `test_excuse_service.py`), eliminating the `FutureWarning` deprecation.
+  3. **Favorite Themes Persistence & Multi-Device Sync**: Persist favorite theme IDs in `data/config.json` (`favorite_themes`). Render golden stars (`⭐`) and sort favorites to the top of theme pickers. Support right-click toggling with Textual MRO click suppression (`event.stop()` & `event.prevent_default()`). Update `GitSyncService.merge_config_files` to perform list unions on `favorite_themes`, and trigger async git pushes when favorites change.
+- **Consequences**:
+  - Positive: Transparent environment diagnostics for end users; deprecation-free console; personal theme favorites synchronize seamlessly across machines without losing custom additions.
+  - Negative: Pre-flight check adds ~15ms startup overhead using Python's standard `importlib.util.find_spec`.
