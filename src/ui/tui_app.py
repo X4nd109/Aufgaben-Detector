@@ -12,7 +12,7 @@ import threading
 import time
 import urllib.parse
 import webbrowser
-from typing import List, Optional, Set, Dict, Tuple, Callable
+from typing import List, Optional, Set, Dict, Tuple, Callable, Any
 
 if sys.platform == "win32":
     import ctypes
@@ -44,6 +44,11 @@ try:
 except ImportError:
     from src.services.digi4school_service import Digi4SchoolService, find_tesseract
 
+try:
+    from update_service import check_for_updates
+except ImportError:
+    from src.services.update_service import check_for_updates
+
 from auth import (
     check_teams_session,
     login_moodle_direct,
@@ -54,6 +59,7 @@ from auth import (
     get_existing_untis_credentials,
 )
 from config import (
+    APP_VERSION,
     ALLOWED_THEMES,
     CONFIG_DIR,
     DEFAULT_THEME,
@@ -2271,6 +2277,100 @@ class Digi4SchoolProgressModal(ModalScreen[Optional[dict]]):
             self.dismiss(self.download_result)
 
 
+class UpdateReminderModal(ModalScreen[None]):
+    """Modal dialog notifying the user about a newer GitHub release."""
+
+    DEFAULT_CSS = """
+    UpdateReminderModal {
+        align: center middle;
+    }
+    #update_dialog {
+        width: 64;
+        max-height: 85%;
+        height: auto;
+        border: thick #a6e3a1;
+        background: #1e1e2e;
+        padding: 1 2;
+    }
+    #update_title {
+        text-align: center;
+        text-style: bold;
+        margin-bottom: 1;
+        color: #a6e3a1;
+    }
+    #update_info_box {
+        width: 100%;
+        height: auto;
+        border: solid #45475a;
+        background: #181825;
+        padding: 1 2;
+        margin-bottom: 1;
+    }
+    .update_version_line {
+        margin-bottom: 0;
+    }
+    #update_hint {
+        text-align: center;
+        margin-bottom: 1;
+        color: #cdd6f4;
+    }
+    #update_buttons_row {
+        height: auto;
+        width: 100%;
+        align: center middle;
+        margin-top: 1;
+    }
+    #btn_update_open {
+        margin-right: 2;
+    }
+    """
+
+    BINDINGS = [
+        Binding("enter", "open_release", "Open Release", show=False),
+        Binding("escape", "dismiss_modal", "Dismiss"),
+    ]
+
+    def __init__(self, update_info: Dict[str, Any]) -> None:
+        super().__init__()
+        self.update_info = update_info
+
+    def compose(self) -> ComposeResult:
+        cur_v = self.update_info.get("current_version", APP_VERSION)
+        lat_v = self.update_info.get("latest_version", "")
+        rel_name = self.update_info.get("name") or f"v{lat_v}"
+
+        with Vertical(id="update_dialog"):
+            yield Label("🚀 New Version Available!", id="update_title")
+            with Vertical(id="update_info_box"):
+                yield Label(f"Current Version: [bold white]v{cur_v}[/]", classes="update_version_line")
+                yield Label(f"New Version:     [bold #a6e3a1]v{lat_v}[/] ({escape(rel_name)})", classes="update_version_line")
+            yield Label("A newer release is ready on GitHub with updates and fixes.", id="update_hint")
+            with Horizontal(id="update_buttons_row"):
+                yield Button("🌐 Open Release in Browser", id="btn_update_open", variant="success")
+                yield Button("↩️ Dismiss [ESC]", id="btn_update_dismiss", variant="default")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn_update_open":
+            self.action_open_release()
+        elif event.button.id == "btn_update_dismiss":
+            self.dismiss()
+
+    def action_open_release(self) -> None:
+        url = self.update_info.get("html_url")
+        if url:
+            try:
+                webbrowser.open(url)
+            except Exception:
+                pass
+        self.dismiss()
+
+    def action_dismiss_modal(self) -> None:
+        self.dismiss()
+
+    def key_escape(self) -> None:
+        self.dismiss()
+
+
 class SettingsModal(ModalScreen[Optional[str]]):
     """Settings dialog for themes, account logins, hidden tasks, and preferences."""
 
@@ -2286,11 +2386,21 @@ class SettingsModal(ModalScreen[Optional[str]]):
         background: #1e1e2e;
         padding: 1 2;
     }
+    #settings_header_row {
+        width: 100%;
+        height: 1;
+        margin-bottom: 1;
+    }
     #settings_title {
+        width: 1fr;
         text-align: center;
         text-style: bold;
-        margin-bottom: 1;
         color: #b4befe;
+    }
+    #settings_version_tag {
+        dock: right;
+        color: #ffffff;
+        text-style: bold;
     }
     .settings_btn {
         width: 100%;
@@ -2316,7 +2426,9 @@ class SettingsModal(ModalScreen[Optional[str]]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="settings_dialog"):
-            yield Label("⚙️ Settings", id="settings_title")
+            with Horizontal(id="settings_header_row"):
+                yield Label("⚙️ Settings", id="settings_title")
+                yield Label(f"v{APP_VERSION}", id="settings_version_tag")
             yield Button("🎨 Change Theme / Palette", id="btn_set_theme", classes="settings_btn", variant="primary", tooltip="Theme [1]")
             yield Button("🔑 Login", id="btn_set_login", classes="settings_btn", variant="warning", tooltip="Login [2]")
             yield Button("👁️ Hidden", id="btn_set_hidden", classes="settings_btn", variant="error", tooltip="Hidden [3]")
@@ -5644,6 +5756,10 @@ class AufgabenDetectorApp(App):
         if should_sync:
             self.action_sync_tasks()
 
+        # Prüfe im Hintergrund auf neue Releases (geräuschlos, blockiert Start nicht)
+        if not self.is_headless:
+            self._start_update_checker()
+
         # Starte Hintergrund-Thread für Maus-Zurück-Taste (Seitentaste XBUTTON1 / "Hinten")
         self._terminal_hwnd = get_terminal_window_hwnd() or _CACHED_TERMINAL_HWND
         if sys.platform == "win32" and not self.is_headless:
@@ -5651,6 +5767,25 @@ class AufgabenDetectorApp(App):
 
         # Sicherstellen, dass das Terminal-Layout beim Start sauber synchronisiert ist
         self.call_after_refresh(self._sync_initial_viewport)
+
+    def _start_update_checker(self) -> None:
+        """Startet die Prüfung auf neuere GitHub-Releases in einem Hintergrund-Thread."""
+        def worker():
+            try:
+                update_info = check_for_updates()
+                if update_info:
+                    self.call_from_thread(self._show_update_modal, update_info)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True, name="UpdateCheckWorker").start()
+
+    def _show_update_modal(self, update_info: Dict[str, Any]) -> None:
+        """Öffnet das Update-Erinnerungsmodal im UI-Thread."""
+        try:
+            self.push_screen(UpdateReminderModal(update_info))
+        except Exception:
+            pass
 
     def _sync_initial_viewport(self) -> None:
         """

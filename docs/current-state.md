@@ -1,7 +1,7 @@
 # Current Project State & Session Handoff — Aufgaben-Detector
 
 > **Last Updated**: 2026-10-19  
-> **Active Milestone**: Milestone 3 — Open Source Release & GitHub Actions CI/CD (v1.0.2)
+> **Active Milestone**: Milestone 3 — Open Source Release & GitHub Actions CI/CD (v1.0.3)
 
 ---
 
@@ -106,6 +106,13 @@
   - Replaced legacy `import fitz` with modern `try: import pymupdf as fitz except ImportError: import fitz` in `src/services/digi4school_service.py` and `tests/test_excuse_service.py`.
   - Updated pre-flight dependency checker in `src/core/dependency_checker.py` and `setup.bat` to verify modern `pymupdf` with legacy `fitz` fallback.
   - Added warning suppression in `main.py` and `src/main.py` to prevent any sub-package `fitz` deprecation warnings from leaking to the terminal.
+- [x] **Version Display & GitHub Release Update Reminder**:
+  - Centralized application version (`APP_VERSION = "1.0.2"`) and repository reference (`GITHUB_REPO = "X4nd109/Aufgaben-Detector"`) in `src/core/config.py`.
+  - Integrated version badge in `SettingsModal` (`[O]`) pinned to the top-right corner in bold white font (`v1.0.2`).
+  - Created standalone `src/services/update_service.py` with semver tuple parser (`parse_version`, `is_newer_version`) and GitHub API release checking with zero external dependencies.
+  - Designed `UpdateReminderModal` appearing in screen center upon startup when a newer GitHub release is detected, featuring current/new version tags and 1-click `🌐 Open Release in Browser` (`Enter`) and `↩️ Dismiss` (`ESC`).
+  - Integrated non-blocking startup check via background daemon thread so instant `< 0.1s` offline app launch is preserved.
+  - Added 9 comprehensive unit and UI tests in `tests/test_update_service.py` (total 206 tests passing with 100% success rate).
 
 ---
 
@@ -122,7 +129,7 @@
 
 ## 3. Known Issues & Blockers
 
-- *None active* (All 192 test suite tests passing cleanly).
+- *None active* (All 206 test suite tests passing cleanly).
 
 ---
 

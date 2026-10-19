@@ -17,6 +17,15 @@ SRC_DIR = os.path.dirname(CORE_DIR)
 WORKSPACE_DIR = os.path.dirname(SRC_DIR)
 USERPROFILE = os.environ.get("USERPROFILE") or os.path.expanduser("~")
 
+# Anwendungs-Version & GitHub Repository
+APP_VERSION = "1.0.3"
+GITHUB_REPO = "X4nd109/Aufgaben-Detector"
+
+
+def get_app_version(prefix: bool = True) -> str:
+    """Gibt die aktuelle Anwendungsversion formatiert zurück (z. B. 'v1.0.2' oder '1.0.2')."""
+    return f"v{APP_VERSION}" if prefix else APP_VERSION
+
 # Pfade im PYTHONPATH registrieren für verlässliche modulübergreifende Imports
 for _p in [WORKSPACE_DIR, SRC_DIR, CORE_DIR, os.path.join(SRC_DIR, "services"), os.path.join(SRC_DIR, "ui")]:
     if _p not in sys.path:

@@ -27,7 +27,8 @@
 | `ExcuseLetterModal` (`[U]`) | Modal | Fehlstunden-Übersicht mit Stundenplan-Abgleich und 1-Klick-PDF-Export für die Schule. |
 | `ExamDetailModal` | Modal | Zeigt Prüfungsdetails und ermöglicht das Bearbeiten persönlicher Stoff-Notizen (`exam_notes.json`). |
 | `AddExamModal` | Modal | Formular zum Eintragen manueller Prüfungstermine mit nativer Wochentagserkennung. |
-| `SettingsModal` (`[O]`) | Modal | Konfigurationsdialog für Schülerprofil, Lehrer, Schule, Untis-Gruppe und Farbthema. |
+| `SettingsModal` (`[O]`) | Modal | Konfigurationsdialog mit Versionsanzeige in der oberen rechten Ecke (`v1.0.2`), Themes, Logins und Schülereinstellungen. |
+| `UpdateReminderModal` | Modal | Popup-Erinnerung in der Bildschirmmitte bei neueren GitHub-Releases mit 1-Klick-Browser-Download. |
 | `LoginChoiceModal` (`[L]`) | Modal | Zentrales Auswahlmenü für Anmeldungen bei Moodle, Microsoft Teams und WebUntis. |
 | `TeamsSetupModal` | Modal | Geführter Teams-Login via Playwright-Chromium mit Passkey-, 2FA- oder Kennwort-Unterstützung. |
 | `MoodleLoginModal` | Modal | Eingabe von Moodle-Benutzername und Passwort mit automatischer Session-Cookie-Speicherung. |
