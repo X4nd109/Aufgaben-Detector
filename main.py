@@ -4,6 +4,10 @@ Startet das moderne TUI oder den CLI-Modus aus dem src/-Paket.
 """
 import os
 import sys
+import warnings
+
+# Suppress PyMuPDF legacy fitz module deprecation warning
+warnings.filterwarnings("ignore", category=FutureWarning, module="fitz")
 
 # Projekt-Root und Quellverzeichnisse im PYTHONPATH registrieren
 _ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -12,7 +16,9 @@ for _sub in [_ROOT_DIR, _SRC_DIR, os.path.join(_SRC_DIR, "core"), os.path.join(_
     if _sub not in sys.path:
         sys.path.insert(0, _sub)
 
-from src.main import main
+from dependency_checker import ensure_dependencies
 
 if __name__ == "__main__":
+    ensure_dependencies()
+    from src.main import main
     main()

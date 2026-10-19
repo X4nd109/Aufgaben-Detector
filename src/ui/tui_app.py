@@ -7,11 +7,12 @@ import datetime
 import os
 import re
 import sys
+import functools
 import threading
 import time
 import urllib.parse
 import webbrowser
-from typing import List, Optional, Set, Dict, Tuple
+from typing import List, Optional, Set, Dict, Tuple, Callable
 
 if sys.platform == "win32":
     import ctypes
@@ -28,6 +29,7 @@ from textual.geometry import Size
 from textual.reactive import reactive
 from textual.screen import Screen, ModalScreen
 from textual.widget import Widget
+from textual.message import Message
 from textual.widgets import Button, DataTable, Header, Input, Label, Markdown, Static, TextArea, LoadingIndicator, ProgressBar, Select
 from textual.command import CommandPalette, Provider, DiscoveryHit, Hit, Hits, CommandInput, SearchIcon, CommandList
 import urllib.parse
@@ -58,6 +60,9 @@ from config import (
     DOWNLOADS_DIR,
     load_saved_theme,
     save_saved_theme,
+    load_favorite_themes,
+    save_favorite_themes,
+    toggle_favorite_theme,
     UNTIS_GROUP,
     UNTIS_URL,
     save_untis_group,
@@ -2363,16 +2368,36 @@ class SettingsModal(ModalScreen[Optional[str]]):
         self.dismiss(None)
 
 
+class ThemeButton(Button):
+    """Button widget that detects right-clicks to toggle favorite themes."""
+
+    class RightClicked(Message):
+        def __init__(self, button: "ThemeButton") -> None:
+            super().__init__()
+            self.button = button
+
+    async def _on_mouse_down(self, event: events.MouseDown) -> None:
+        if event.button == 3:  # Right Click
+            event.stop()
+            event.prevent_default()
+            self.post_message(self.RightClicked(self))
+
+    async def _on_click(self, event: events.Click) -> None:
+        if event.button == 3:
+            event.stop()
+            event.prevent_default()
+
+
 class ThemeSelectModal(ModalScreen[Optional[str]]):
-    """Auswahldialog für die 5 handverlesenen Terminal-Themes mit Tastenkürzeln und Klick-Buttons."""
+    """Selection dialog for all available terminal themes with favorites and right-click toggle."""
 
     DEFAULT_CSS = """
     ThemeSelectModal {
         align: center middle;
     }
     #theme_dialog {
-        width: 58;
-        height: auto;
+        width: 62;
+        max-height: 85%;
         border: thick #cba6f7;
         background: #1e1e2e;
         padding: 1 2;
@@ -2404,43 +2429,116 @@ class ThemeSelectModal(ModalScreen[Optional[str]]):
     ]
 
     THEMES_INFO = [
-        ("catppuccin-mocha", "🍵 Catppuccin Mocha (Modern & Smooth)", "btn_thm_catppuccin", "1"),
-        ("dracula", "🧛 Dracula (Dark & High-Contrast)", "btn_thm_dracula", "2"),
-        ("tokyo-night", "🌃 Tokyo Night (Clean & Vibrant)", "btn_thm_tokyo", "3"),
-        ("nord", "❄️ Nord (Cool & Minimalist)", "btn_thm_nord", "4"),
-        ("monokai", "🎨 Monokai (Classic Retro)", "btn_thm_monokai", "5"),
+        ("catppuccin-mocha", "🍵 Catppuccin Mocha (Modern & Smooth)"),
+        ("dracula", "🧛 Dracula (Dark & High-Contrast)"),
+        ("tokyo-night", "🌃 Tokyo Night (Clean & Vibrant)"),
+        ("nord", "❄️ Nord (Cool & Minimalist)"),
+        ("monokai", "🎨 Monokai (Classic Retro)"),
+        ("gruvbox", "🪵 Gruvbox (Warm & Earthy)"),
+        ("rose-pine", "🌸 Rosé Pine (Dark & Dreamy)"),
+        ("rose-pine-moon", "🌙 Rosé Pine Moon (Muted & Cozy)"),
+        ("rose-pine-dawn", "🌅 Rosé Pine Dawn (Warm & Light)"),
+        ("solarized-dark", "🌌 Solarized Dark (Classic Contrast)"),
+        ("solarized-light", "☀️ Solarized Light (Clean & Crisp)"),
+        ("catppuccin-macchiato", "☕ Catppuccin Macchiato (Medium Dark)"),
+        ("catppuccin-frappe", "🍧 Catppuccin Frappé (Soft Dark)"),
+        ("catppuccin-latte", "🥛 Catppuccin Latte (Bright & Pastel)"),
+        ("atom-one-dark", "⚛️ Atom One Dark (Classic Editor)"),
+        ("atom-one-light", "💡 Atom One Light (Clean Modern)"),
+        ("flexoki", "🌿 Flexoki (Inky Earth Tones)"),
+        ("textual-dark", "🖤 Textual Dark (Deep Midnight)"),
+        ("textual-light", "🤍 Textual Light (Pure Paper)"),
+        ("ansi-dark", "📟 ANSI Dark (Vintage Terminal)"),
+        ("ansi-light", "📄 ANSI Light (Vintage Paper)"),
     ]
 
     def __init__(self, current_theme: str = "catppuccin-mocha"):
         super().__init__()
         self.current_theme = current_theme
 
+    def _get_sorted_theme_items(self):
+        favs = load_favorite_themes()
+        fav_list = []
+        regular_list = []
+        for t_id, t_name in self.THEMES_INFO:
+            is_active = (t_id == self.current_theme)
+            is_fav = (t_id in favs)
+            star = "⭐ " if is_fav else ""
+            prefix = "✓ " if is_active else ""
+            label = f"{star}{prefix}{t_name}"
+            item = (t_id, label, is_active)
+            if is_fav:
+                fav_list.append(item)
+            else:
+                regular_list.append(item)
+        return fav_list + regular_list
+
     def compose(self) -> ComposeResult:
         with Vertical(id="theme_dialog"):
             yield Label("🎨 Choose Color Theme / Palette", id="theme_title")
-            for t_id, t_name, btn_id, num in self.THEMES_INFO:
-                is_active = (t_id == self.current_theme)
-                prefix = "✓ " if is_active else ""
-                label = f"[{num}] {prefix}{t_name}"
-                variant = "success" if is_active else "default"
-                yield Button(label, id=btn_id, classes="theme_btn", variant=variant)
+            with VerticalScroll(id="theme_scroll"):
+                for t_id, label, is_active in self._get_sorted_theme_items():
+                    variant = "success" if is_active else "default"
+                    yield ThemeButton(label, id=f"btn_thm_{t_id.replace('-', '_')}", classes="theme_btn", variant=variant)
             with Horizontal(id="theme_cancel_row"):
                 yield Button("↩️ Back [ESC]", id="btn_theme_cancel", variant="default")
+
+    def refresh_buttons(self) -> None:
+        favs = load_favorite_themes()
+        scroll = self.query_one("#theme_scroll", VerticalScroll)
+
+        # 1. Labels aktualisieren
+        for t_id, t_name in self.THEMES_INFO:
+            bid = f"#btn_thm_{t_id.replace('-', '_')}"
+            try:
+                btn = scroll.query_one(bid, ThemeButton)
+                is_active = (t_id == self.current_theme)
+                is_fav = (t_id in favs)
+                star = "⭐ " if is_fav else ""
+                prefix = "✓ " if is_active else ""
+                btn.label = f"{star}{prefix}{t_name}"
+            except Exception:
+                pass
+
+        # 2. Re-order: Favoriten ganz nach oben
+        fav_buttons = []
+        regular_buttons = []
+        for t_id, _ in self.THEMES_INFO:
+            bid = f"#btn_thm_{t_id.replace('-', '_')}"
+            try:
+                btn = scroll.query_one(bid, ThemeButton)
+                if t_id in favs:
+                    fav_buttons.append(btn)
+                else:
+                    regular_buttons.append(btn)
+            except Exception:
+                pass
+
+        desired_order = fav_buttons + regular_buttons
+        for btn in reversed(desired_order):
+            if scroll.children and btn != scroll.children[0]:
+                scroll.move_child(btn, before=scroll.children[0])
+
+    def on_theme_button_right_clicked(self, event: ThemeButton.RightClicked) -> None:
+        bid = event.button.id or ""
+        if bid.startswith("btn_thm_"):
+            raw_id = bid[len("btn_thm_"):].replace("_", "-")
+            if raw_id in ALLOWED_THEMES:
+                is_fav = toggle_favorite_theme(raw_id)
+                if is_fav:
+                    self.app.notify(f"⭐ Marked '{raw_id}' as favorite!", severity="information")
+                else:
+                    self.app.notify(f"Removed '{raw_id}' from favorites.", severity="warning")
+                self.refresh_buttons()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id or ""
         if bid in ["btn_theme_cancel", "btn_cancel"]:
             self.dismiss(None)
-        elif bid == "btn_thm_catppuccin":
-            self.dismiss("catppuccin-mocha")
-        elif bid == "btn_thm_dracula":
-            self.dismiss("dracula")
-        elif bid == "btn_thm_tokyo":
-            self.dismiss("tokyo-night")
-        elif bid == "btn_thm_nord":
-            self.dismiss("nord")
-        elif bid == "btn_thm_monokai":
-            self.dismiss("monokai")
+        elif bid.startswith("btn_thm_"):
+            raw_id = bid[len("btn_thm_"):].replace("_", "-")
+            if raw_id in ALLOWED_THEMES:
+                self.dismiss(raw_id)
 
     def action_choose_catppuccin(self) -> None:
         self.dismiss("catppuccin-mocha")
@@ -2462,6 +2560,94 @@ class ThemeSelectModal(ModalScreen[Optional[str]]):
 
     def key_escape(self) -> None:
         self.dismiss(None)
+
+
+class FavoriteThemeProvider(Provider):
+    """A provider for themes that places favorite themes at the top with a golden star."""
+
+    @property
+    def commands(self) -> list[tuple[str, Callable[[], None], str]]:
+        themes = self.app.available_themes
+        favs = load_favorite_themes()
+
+        def set_app_theme(name: str) -> None:
+            self.app.theme = name
+
+        fav_cmds = []
+        regular_cmds = []
+
+        for theme in sorted(themes.values(), key=lambda t: t.name):
+            name = theme.name
+            if name in favs:
+                prompt = f"⭐ {name}"
+                fav_cmds.append((prompt, functools.partial(set_app_theme, name), name))
+            else:
+                prompt = name
+                regular_cmds.append((prompt, functools.partial(set_app_theme, name), name))
+
+        return fav_cmds + regular_cmds
+
+    async def discover(self) -> Hits:
+        for prompt, callback, _ in self.commands:
+            yield DiscoveryHit(prompt, callback)
+
+    async def search(self, query: str) -> Hits:
+        matcher = self.matcher(query)
+        favs = load_favorite_themes()
+        for prompt, callback, raw_name in self.commands:
+            m1 = matcher.match(prompt)
+            m2 = matcher.match(raw_name)
+            score = max(m1, m2)
+            if score > 0:
+                if raw_name in favs:
+                    score += 100.0
+                yield Hit(score, matcher.highlight(prompt), callback)
+
+
+class ThemeCommandList(CommandList):
+    """Custom CommandList that intercepts right-clicks to toggle favorite themes."""
+
+    async def _on_mouse_down(self, event: events.MouseDown) -> None:
+        if event.button == 3:  # Right Click
+            event.stop()
+            event.prevent_default()
+
+    async def _on_click(self, event: events.Click) -> None:
+        if event.button == 3:  # Right Click
+            event.stop()
+            event.prevent_default()
+            opt_idx = event.style.meta.get("option")
+            if opt_idx is not None and 0 <= opt_idx < len(self._options):
+                opt = self.get_option_at_index(opt_idx)
+                hit = getattr(opt, "hit", None)
+                if hit:
+                    raw_text = str(getattr(hit, "text", "") or getattr(hit, "prompt", ""))
+                    clean_name = raw_text.replace("⭐", "").replace("★", "").strip()
+                    if clean_name in ALLOWED_THEMES:
+                        is_fav = toggle_favorite_theme(clean_name)
+                        if is_fav:
+                            self.app.notify(f"⭐ Marked '{clean_name}' as favorite!", severity="information")
+                        else:
+                            self.app.notify(f"Removed '{clean_name}' from favorites.", severity="warning")
+                        palette = self.screen
+                        if isinstance(palette, CommandPalette):
+                            input_w = palette.query_one(CommandInput)
+                            palette._gather_commands(input_w.value)
+
+
+class ThemeCommandPalette(CommandPalette):
+    """CommandPalette for themes with right-click favorite toggle."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="--container"):
+            with Horizontal(id="--input"):
+                yield SearchIcon()
+                yield CommandInput(placeholder=self._placeholder, select_on_focus=False)
+                if not self.run_on_select:
+                    yield Button("▶")
+            with Vertical(id="--results"):
+                yield ThemeCommandList()
+                yield LoadingIndicator()
 
 
 class SubjectFilterModal(ModalScreen[Optional[str]]):
@@ -5637,7 +5823,7 @@ class AufgabenDetectorApp(App):
                 next_date_short = f"{_ndt.day:02d}.{_ndt.month:02d}."
             except Exception:
                 next_date_short = next_exam.date_display
-            exam_badge = f"  |  📝 Next: [bold cyan]{next_date_short} {next_exam.subject}[/bold cyan] [bold yellow]{next_exam.countdown_display}[/bold yellow]"
+            exam_badge = f"  |  📝 Next: [bold dodger_blue1]{next_date_short} {next_exam.subject}[/bold dodger_blue1] [bold green]{next_exam.countdown_display}[/bold green]"
 
         stats_text = f"{todo_badge}  |  🎓 Moodle: {moodle_cnt}  |  👥 Teams: {teams_cnt}  |  ✏️ Manual: {manual_cnt}{exam_badge}  |  🕒 Sync: {sync_time_str}"
         self.query_one("#info_stats", Label).update(stats_text)
@@ -6095,12 +6281,21 @@ class AufgabenDetectorApp(App):
         if theme in ALLOWED_THEMES:
             save_saved_theme(theme)
 
+    def search_themes(self) -> None:
+        """Show a search command palette containing all registered themes with favorites pinned at top."""
+        self.push_screen(
+            ThemeCommandPalette(
+                providers=[FavoriteThemeProvider],
+                placeholder="Search for themes... (Right-click to toggle ⭐ favorite)",
+            )
+        )
+
     def action_change_theme(self) -> None:
-        """Öffnet die Theme-Auswahl (Textual CommandPalette mit den 5 handverlesenen Themes)."""
+        """Öffnet die Theme-Auswahl (Textual CommandPalette mit allen Themes und Favoriten oben)."""
         self.search_themes()
 
     def action_command_palette(self) -> None:
-        """Palette-Taste öffnet direkt die Schnellauswahl der 5 wichtigsten Themes."""
+        """Palette-Taste öffnet direkt die Schnellauswahl der Themes."""
         self.action_change_theme()
 
     def _start_mouse_back_listener(self) -> None:

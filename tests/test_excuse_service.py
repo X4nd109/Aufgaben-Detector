@@ -7,7 +7,10 @@ import sys
 import unittest
 from unittest.mock import patch
 import tempfile
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import src

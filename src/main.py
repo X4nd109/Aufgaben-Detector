@@ -8,6 +8,10 @@ import json
 import os
 import sys
 import time
+import warnings
+
+# Suppress PyMuPDF legacy fitz module deprecation warning
+warnings.filterwarnings("ignore", category=FutureWarning, module="fitz")
 
 _SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 _ROOT_DIR = os.path.dirname(_SRC_DIR)
@@ -356,6 +360,10 @@ def main():
 
     args = parser.parse_args()
 
+    if not args.json:
+        from dependency_checker import ensure_dependencies
+        ensure_dependencies()
+
     if args.teams_login:
         setup_teams_interactive(console)
         return
@@ -389,7 +397,7 @@ def main():
             ui.render_task_table(mgr.tasks, current_filter_status="all")
         return
 
-    # Standard: Moderne TUI mit Maus-Buttons (oder Fallback auf CLI)
+    # Standard: Modern TUI with mouse buttons (or explicit CLI via --cli)
     if args.cli:
         ui.adjust_console_window(120, 32)
         interactive_loop()
@@ -398,10 +406,11 @@ def main():
             from tui_app import run_tui
             run_tui()
             sys.exit(0)
+        except KeyboardInterrupt:
+            sys.exit(0)
         except Exception as e:
-            console.print(f"[yellow]Starte klassische CLI (TUI-Fallback: {e})...[/yellow]")
-            ui.adjust_console_window(120, 32)
-            interactive_loop()
+            console.print(f"[bold red]Error running application:[/bold red] {e}")
+            sys.exit(1)
 
 
 if __name__ == "__main__":

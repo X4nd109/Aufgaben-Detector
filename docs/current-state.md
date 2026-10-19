@@ -1,7 +1,7 @@
 # Current Project State & Session Handoff — Aufgaben-Detector
 
-> **Last Updated**: 2026-10-18  
-> **Active Milestone**: Milestone 3 — Open Source Release & GitHub Actions CI/CD (v1.0.1)
+> **Last Updated**: 2026-10-19  
+> **Active Milestone**: Milestone 3 — Open Source Release & GitHub Actions CI/CD (v1.0.2)
 
 ---
 
@@ -85,6 +85,28 @@
   - Added official Legal Disclaimer (§ 42 Austrian Copyright Act / UrhG personal study only, no DRM circumvention, prohibition of redistribution, trademark notices).
   - Confirmed and documented full compatibility between MIT License and legal study disclaimer.
 
+- [x] **Missing Dependency Detection & Interactive Auto-Install**:
+  - Implemented lightweight, zero-dependency pre-flight checker in `src/core/dependency_checker.py`.
+  - Replaced silent fallback to legacy CLI with an English framed ASCII warning banner.
+  - Displays missing requirements from `requirements.txt` with their respective roles.
+  - Directly provides the exact Windows install command (`python -m pip install -r requirements.txt`).
+  - Added interactive prompt (`[Y/n]`) automatically triggering pip installation in TTY environments and instantly launching the modern TUI upon success.
+  - Eliminated automatic fallback to `interactive_loop()` in `src/main.py` while keeping `--cli` functional as an explicit flag.
+- [x] **Theme Library Expansion & Header UI Refinement**:
+  - Expanded curated theme library in `src/core/config.py` from 5 to 21 themes (added 16 new themes including Gruvbox, Rosé Pine variants, Solarized, Catppuccin variants, Atom One, Flexoki, Textual Dark/Light, and ANSI vintage).
+  - Updated `ThemeSelectModal` in `src/ui/tui_app.py` with dynamic button mapping and `VerticalScroll` for smooth navigation across all 21 themes.
+  - Refined the "Next Exam" header badge styling in `tui_app.py`: changed date and subject to vibrant blue (`bold dodger_blue1`) and countdown badge to green (`bold green`), replacing previous yellow and cyan.
+- [x] **Favorite Themes via Right-Click (`⭐`)**:
+  - Added persistent favorites configuration (`favorite_themes`) in `data/config.json` via `load_favorite_themes`, `save_favorite_themes`, and `toggle_favorite_theme` in `src/core/config.py`.
+  - Implemented right-click toggle in both the `ThemeSelectModal` (using custom `ThemeButton`) and the Textual Command Palette (`FavoriteThemeProvider`, `ThemeCommandList`, `ThemeCommandPalette`).
+  - Sorted all favorite themes to the very top of both theme menus, prefixed with a golden star (`⭐ `).
+  - Integrated toast notifications on right-click ("Added to favorites ⭐" / "Removed from favorites") and in-place button reordering.
+  - Full Git-Sync integration: `favorite_themes` are merged across devices in `git_sync_service.py` (`merge_config_files`) and changes trigger background auto-push.
+- [x] **PyMuPDF Modern Import Migration & FutureWarning Elimination**:
+  - Replaced legacy `import fitz` with modern `try: import pymupdf as fitz except ImportError: import fitz` in `src/services/digi4school_service.py` and `tests/test_excuse_service.py`.
+  - Updated pre-flight dependency checker in `src/core/dependency_checker.py` and `setup.bat` to verify modern `pymupdf` with legacy `fitz` fallback.
+  - Added warning suppression in `main.py` and `src/main.py` to prevent any sub-package `fitz` deprecation warnings from leaking to the terminal.
+
 ---
 
 ## 2. In Progress / Immediate Next Steps
@@ -100,7 +122,7 @@
 
 ## 3. Known Issues & Blockers
 
-- *None active* (All 182 test suite tests passing cleanly).
+- *None active* (All 192 test suite tests passing cleanly).
 
 ---
 

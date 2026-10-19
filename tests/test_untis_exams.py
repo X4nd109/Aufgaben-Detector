@@ -721,17 +721,17 @@ class TestUntisExamsTUI(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(add_modal.exam_type, "SA")
                 self.assertIn("SA", str(btn_type.label))
 
-                await pilot.click("#btn_add_exam_type")
+                add_modal._toggle_type()
                 await pilot.pause()
                 self.assertEqual(add_modal.exam_type, "PR")
                 self.assertIn("PR", str(btn_type.label))
 
-                await pilot.click("#btn_add_exam_type")
+                add_modal._toggle_type()
                 await pilot.pause()
                 self.assertEqual(add_modal.exam_type, "WDH")
                 self.assertIn("WDH", str(btn_type.label))
 
-                await pilot.click("#btn_add_exam_type")
+                add_modal._toggle_type()
                 await pilot.pause()
                 self.assertEqual(add_modal.exam_type, "TE")
                 self.assertIn("TEST", str(btn_type.label))

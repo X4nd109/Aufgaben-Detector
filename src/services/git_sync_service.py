@@ -315,6 +315,23 @@ def merge_config_files(local_cfg: dict, remote_cfg: dict) -> dict:
                 if val_str:
                     merged[k] = val_str
 
+    # favorite_themes synchronisieren (Reihenfolge bewahren, Duplikate vermeiden)
+    rem_favs = remote_cfg.get("favorite_themes")
+    loc_favs = local_cfg.get("favorite_themes")
+    if isinstance(rem_favs, list):
+        if not isinstance(loc_favs, list) or not loc_favs:
+            merged["favorite_themes"] = [str(t).strip().lower().replace("_", "-") for t in rem_favs if isinstance(t, str)]
+        else:
+            seen = set()
+            combined = []
+            for t in loc_favs + rem_favs:
+                if isinstance(t, str):
+                    c = t.strip().lower().replace("_", "-")
+                    if c and c not in seen:
+                        seen.add(c)
+                        combined.append(c)
+            merged["favorite_themes"] = combined
+
     # excuse_profile synchronisieren
     loc_profile = merged.get("excuse_profile")
     if not isinstance(loc_profile, dict):

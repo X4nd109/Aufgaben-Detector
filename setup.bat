@@ -107,7 +107,7 @@ REM 2. Pruefen und Installieren der Python-Libraries
 REM -----------------------------------------------------------------
 echo [*] Ueberpruefe benoetigte Python-Libraries...
 
-"%PYTHON_CMD%" -c "import playwright, requests, rich, textual, fpdf, fitz, PIL, pytesseract" >nul 2>nul
+"%PYTHON_CMD%" -c "import playwright, requests, rich, textual, fpdf, pymupdf, PIL, pytesseract" >nul 2>nul
 if %ERRORLEVEL% equ 0 (
     echo [OK] Alle benoetigten Python-Libraries sind bereits installiert!
 ) else (

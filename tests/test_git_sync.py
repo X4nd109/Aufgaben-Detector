@@ -131,6 +131,7 @@ class TestGitSyncService(unittest.TestCase):
             "untis_school": "spengergasse-old",
             "student_name": "Old Name",
             "student_class": "2AHWII",
+            "favorite_themes": ["nord", "dracula"],
             "excuse_profile": {
                 "student_name": "Max",
                 "student_class": "1AHIT",
@@ -143,6 +144,7 @@ class TestGitSyncService(unittest.TestCase):
             "untis_group": "3ahwii",
             "student_name": "Alexander New",
             "student_class": "3AHWII",
+            "favorite_themes": ["nord", "gruvbox"],
             "excuse_profile": {
                 "student_name": "Alexander New",
                 "teacher_name": "Prof. Erika",
@@ -155,6 +157,7 @@ class TestGitSyncService(unittest.TestCase):
         self.assertEqual(merged["untis_group"], "3ahwii")  # Remote Klasse synchronisiert
         self.assertEqual(merged["student_name"], "Alexander New")  # Remote Schülername synchronisiert
         self.assertEqual(merged["student_class"], "3AHWII")
+        self.assertEqual(merged["favorite_themes"], ["nord", "dracula", "gruvbox"])  # Favoriten gemerged
         self.assertEqual(merged["excuse_profile"]["student_name"], "Alexander New")
         self.assertEqual(merged["excuse_profile"]["teacher_name"], "Prof. Erika")
         self.assertEqual(merged["excuse_profile"]["school_address"], "Spengergasse 20")
@@ -217,6 +220,23 @@ class TestGitSyncService(unittest.TestCase):
                 save_saved_theme("catppuccin-mocha")
                 self.assertEqual(load_saved_theme(), "catppuccin-mocha")
                 mock_push.assert_called_with("Update theme: catppuccin-mocha")
+
+    def test_favorite_themes_change_triggers_git_push(self):
+        from unittest.mock import patch
+        from config import save_favorite_themes, load_favorite_themes
+        from git_sync_service import GitSyncService
+
+        save_favorite_themes(["nord"])
+        with patch.object(GitSyncService, "async_push") as mock_push:
+            with patch("git_sync_service.is_git_configured", return_value=True):
+                # Favoriten ändern
+                save_favorite_themes(["nord", "gruvbox"])
+                mock_push.assert_called_with("Update favorite themes")
+
+                # Gleiche Favoriten erneut speichern darf keinen Push auslösen
+                mock_push.reset_mock()
+                save_favorite_themes(["nord", "gruvbox"])
+                mock_push.assert_not_called()
 
     def test_school_and_student_config_triggers_git_push(self):
         from unittest.mock import patch

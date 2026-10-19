@@ -383,13 +383,13 @@ class TestAufgabenDetectorTUI(unittest.IsolatedAsyncioTestCase):
             self.assertIn("To Do", str(stats_lbl.render()))
 
     async def test_theme_top_five_and_persistence(self):
-        """Prüft, dass genau die 5 wichtigsten Themes aktiv sind und das Theme persistent gespeichert wird."""
+        """Prüft, dass alle konfigurierten Themes aktiv sind und das Theme persistent gespeichert wird."""
         orig_theme = load_saved_theme()
         try:
-            # 1. Genau 5 handverlesene Themes
+            # 1. Alle konfigurierten Themes aktiv
             app = AufgabenDetectorApp(self.mgr)
             self.assertEqual(sorted(list(app.available_themes.keys())), sorted(ALLOWED_THEMES))
-            self.assertEqual(len(app.available_themes), 5)
+            self.assertEqual(len(app.available_themes), len(ALLOWED_THEMES))
 
             async with app.run_test(size=(120, 35)) as pilot:
                 # 2. Klick auf Settings-Button -> Theme-Button öffnet Palette
@@ -666,6 +666,128 @@ class TestAufgabenDetectorTUI(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(load_saved_theme(), "nord")
         finally:
             save_saved_theme(orig)
+
+    async def test_favorite_themes_persistence_and_sorting(self):
+        """Verifiziert, dass Favoriten oben einsortiert werden und einen goldenen Stern erhalten."""
+        from config import load_favorite_themes, save_favorite_themes, toggle_favorite_theme
+        from tui_app import FavoriteThemeProvider, ThemeSelectModal
+        orig_favs = load_favorite_themes()
+        try:
+            save_favorite_themes([])
+            self.assertEqual(load_favorite_themes(), [])
+
+            # Toggle dracula
+            self.assertTrue(toggle_favorite_theme("dracula"))
+            self.assertIn("dracula", load_favorite_themes())
+
+            # Toggle rose-pine
+            self.assertTrue(toggle_favorite_theme("rose-pine"))
+            self.assertIn("rose-pine", load_favorite_themes())
+
+            app = AufgabenDetectorApp(self.mgr)
+            async with app.run_test() as pilot:
+                provider = FavoriteThemeProvider(app.screen)
+                commands = provider.commands
+
+                # Erste zwei Einträge müssen die Favoriten mit Stern sein
+                first_two = [c[0] for c in commands[:2]]
+                self.assertIn("⭐ dracula", first_two)
+                self.assertIn("⭐ rose-pine", first_two)
+
+            # Prüfe auch ThemeSelectModal Sortierung
+            modal = ThemeSelectModal()
+            items = modal._get_sorted_theme_items()
+            first_two_ids = [item[0] for item in items[:2]]
+            self.assertIn("dracula", first_two_ids)
+            self.assertIn("rose-pine", first_two_ids)
+            self.assertTrue(items[0][1].startswith("⭐"))
+
+            # Toggle wieder entfernen
+            self.assertFalse(toggle_favorite_theme("dracula"))
+            self.assertNotIn("dracula", load_favorite_themes())
+        finally:
+            save_favorite_themes(orig_favs)
+
+    async def test_theme_modal_right_click_toggle(self):
+        """Verifiziert, dass ein Rechtsklick auf ein Theme in ThemeSelectModal den Favoritenstatus umschaltet."""
+        from config import load_favorite_themes, save_favorite_themes
+        from tui_app import ThemeSelectModal, ThemeButton
+        from textual import events
+
+        orig_favs = load_favorite_themes()
+        try:
+            save_favorite_themes([])
+            modal = ThemeSelectModal()
+            app = AufgabenDetectorApp(self.mgr)
+            async with app.run_test() as pilot:
+                app.push_screen(modal)
+                await pilot.pause()
+
+                btn = modal.query_one("#btn_thm_nord", ThemeButton)
+                self.assertNotIn("⭐", str(btn.label))
+
+                # Rechtsklick simulieren
+                right_click_evt = events.MouseDown(btn, x=2, y=0, delta_x=0, delta_y=0, button=3, shift=False, meta=False, ctrl=False)
+                await btn._on_mouse_down(right_click_evt)
+                await pilot.pause()
+
+                self.assertIn("nord", load_favorite_themes())
+                btn_updated = modal.query_one("#btn_thm_nord", ThemeButton)
+                self.assertIn("⭐", str(btn_updated.label))
+        finally:
+            save_favorite_themes(orig_favs)
+
+    async def test_theme_command_palette_right_click_toggle(self):
+        """Verifiziert, dass Rechtsklick auf ein Theme in ThemeCommandPalette den Favoritenstatus toggelt."""
+        from config import load_favorite_themes, save_favorite_themes
+        from tui_app import ThemeCommandPalette, ThemeCommandList, FavoriteThemeProvider
+        from rich.style import Style
+        from textual import events
+
+        orig_favs = load_favorite_themes()
+        try:
+            save_favorite_themes([])
+            app = AufgabenDetectorApp(self.mgr)
+            async with app.run_test() as pilot:
+                p = ThemeCommandPalette(providers=[FavoriteThemeProvider])
+                app.push_screen(p)
+                await pilot.pause()
+
+                cl = p.query_one(ThemeCommandList)
+                self.assertGreater(cl.option_count, 0)
+
+                # Option 0 hat zunächst keinen Stern
+                opt0 = cl.get_option_at_index(0)
+                raw_text = str(getattr(opt0.hit, "text", ""))
+                self.assertNotIn("⭐", raw_text)
+
+                # Rechtsklick auf Option 0
+                click_evt = events.Click(cl, x=2, y=0, delta_x=0, delta_y=0, button=3, shift=False, meta=False, ctrl=False)
+                click_evt.style = Style(meta={"option": 0})
+                await cl._on_click(click_evt)
+                await pilot.pause()
+
+                # Nun ist das Theme in den Favoriten
+                self.assertIn(raw_text, load_favorite_themes())
+
+                # Und das erste Theme in der Liste ist nun ein Favorit mit Stern
+                opt0_new = cl.get_option_at_index(0)
+                self.assertIn("⭐", str(getattr(opt0_new.hit, "text", "")))
+        finally:
+            save_favorite_themes(orig_favs)
+
+    async def test_theme_command_palette_mouse_click_selection(self):
+        """Verifiziert, dass Linksklick auf ein Theme in ThemeCommandPalette das Theme auswählt ohne ScreenStackError."""
+        from tui_app import ThemeCommandList
+        app = AufgabenDetectorApp(self.mgr)
+        async with app.run_test() as pilot:
+            app.search_themes()
+            await pilot.pause()
+            cl = app.screen.query_one(ThemeCommandList)
+            self.assertGreater(cl.option_count, 0)
+            await pilot.click(cl, offset=(5, 1), button=1)
+            await pilot.pause()
+            self.assertEqual(len(app._screen_stack), 1)
 
     def test_teams_completed_tasks_filter(self):
         """Prüft, dass erledigte Teams-Aufgaben als is_completed erkannt und im Filter angezeigt werden."""

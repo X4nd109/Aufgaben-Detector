@@ -9,7 +9,7 @@ import re
 import sys
 from pathlib import Path
 import threading
-from typing import Optional
+from typing import Optional, List
 
 # Basis-Verzeichnisse:
 CORE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -436,13 +436,38 @@ def clean_browser_profile_caches(custom_profiles=None, threshold_mb: int = 600) 
     return total_freed_bytes
 
 
-# Die 5 wichtigsten, handverlesenen Terminal-Themes
+# Vollständige Palette kuratierter und moderner Terminal-Themes (~20 Themes)
 ALLOWED_THEMES = [
+    # Beliebte Dark Themes
     "catppuccin-mocha",
     "dracula",
     "tokyo-night",
     "nord",
     "monokai",
+    # Retro & Warm
+    "gruvbox",
+    # Rosé Pine Palette
+    "rose-pine",
+    "rose-pine-moon",
+    "rose-pine-dawn",
+    # Solarized Palette
+    "solarized-dark",
+    "solarized-light",
+    # Catppuccin Varianten
+    "catppuccin-macchiato",
+    "catppuccin-frappe",
+    "catppuccin-latte",
+    # Atom One Palette
+    "atom-one-dark",
+    "atom-one-light",
+    # Minimal & Earth Tones
+    "flexoki",
+    # Textual Standard Themes
+    "textual-dark",
+    "textual-light",
+    # Klassische ANSI Terminal Themes
+    "ansi-dark",
+    "ansi-light",
 ]
 DEFAULT_THEME = "catppuccin-mocha"
 
@@ -724,6 +749,86 @@ def save_saved_theme(theme_name: str) -> None:
                 GitSyncService.async_push(f"Update theme: {clean_theme}")
         except Exception:
             pass
+
+
+def load_favorite_themes() -> List[str]:
+    """Lädt die Liste favorisierter Theme-Namen aus config.json."""
+    for path in [CONFIG_FILE, APP_CONFIG_FILE]:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        favs = data.get("favorite_themes")
+                        if isinstance(favs, list):
+                            return [t for t in favs if isinstance(t, str) and t in ALLOWED_THEMES]
+            except Exception:
+                pass
+    return []
+
+
+def save_favorite_themes(favorites: List[str]) -> None:
+    """Speichert favorisierte Themes persistent in config.json ab."""
+    clean_favs = []
+    seen = set()
+    for t in favorites:
+        if isinstance(t, str):
+            c = t.strip().lower().replace("_", "-")
+            if c in ALLOWED_THEMES and c not in seen:
+                seen.add(c)
+                clean_favs.append(c)
+
+    changed = False
+    for path in [CONFIG_FILE, APP_CONFIG_FILE]:
+        try:
+            data = {}
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        loaded = json.load(f)
+                        if isinstance(loaded, dict):
+                            data = loaded
+                except Exception:
+                    data = {}
+            if data.get("favorite_themes") != clean_favs:
+                data["favorite_themes"] = clean_favs
+                changed = True
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                tmp_path = f"{path}.tmp"
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                os.replace(tmp_path, path)
+        except Exception:
+            pass
+
+    if changed:
+        try:
+            try:
+                from git_sync_service import is_git_configured, GitSyncService
+            except ImportError:
+                from services.git_sync_service import is_git_configured, GitSyncService
+            if is_git_configured():
+                GitSyncService.async_push("Update favorite themes")
+        except Exception:
+            pass
+
+
+def toggle_favorite_theme(theme_name: str) -> bool:
+    """Schaltet den Favoriten-Status eines Themes um. Gibt True zurück, wenn es nun favorisiert ist."""
+    if not theme_name or not isinstance(theme_name, str):
+        return False
+    clean = theme_name.strip().lower().replace("_", "-")
+    if clean not in ALLOWED_THEMES:
+        return False
+    favs = load_favorite_themes()
+    if clean in favs:
+        favs.remove(clean)
+        is_fav = False
+    else:
+        favs.append(clean)
+        is_fav = True
+    save_favorite_themes(favs)
+    return is_fav
 
 
 

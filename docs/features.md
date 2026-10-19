@@ -50,7 +50,8 @@
 | `Restore` | `[W]` / `btn_restore_task` | Stellt eine gelöschte Aufgabe aus dem Papierkorb wieder her. |
 | `Generate Excuse PDF` | `btn_generate_excuse` | Erzeugt das druckfertige Entschuldigungsschreiben als PDF und öffnet den System-Betrachter. |
 | `Synchronize` | `[R]` / `btn_sync` | Startet den sofortigen Hintergrund-Abgleich mit Moodle, Teams und WebUntis. |
-| `Change Theme` | `[T]` / `Ctrl+P` | Rotiert durch die integrierten Farbthemen (Catppuccin Mocha, Nord, Dracula, Monokai). |
+| `Change Theme` | `[T]` / `Ctrl+P` | Rotiert durch die 21 Themes oder öffnet die Theme-Palette (`search_themes`) mit Rechtsklick-Favoriten (`⭐`). |
+| `ThemeSelectModal` | Modal | Menü zur Auswahl aus allen 21 Themes; Rechtsklick markiert ein Theme als Favorit (`⭐`), Favoriten stehen ganz oben. |
 | `Render Quality` | `digi_select_quality` | Wählt die Renderqualität im Digi4School-Download-Dialog (Ultra-HD 4.0x, High-Res 3.0x, Standard 2.0x). |
 | `Start Download` | `btn_start_digi_download` | Prüft Tesseract OCR und startet den automatisierten Digi4School Buchdownload. |
 | `Show in Downloads folder` | `btn_open_folder_d4s` | Öffnet den Downloads-Ordner nach erfolgreichem Buchdownload direkt im Windows Explorer. |
