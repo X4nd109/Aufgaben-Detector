@@ -135,7 +135,16 @@
 
 ## 4. Session Handoff Notes (Context for Next Agent)
 
-- **Recent Achievements (2026-10-18)**:
+- **Recent Achievements (2026-10-19)**:
+  - **Version Badge & Asynchronous GitHub Release Update Notification (v1.0.3)**:
+    - Centralized application version (`APP_VERSION = "1.0.3"`) and GitHub repo in `src/core/config.py`.
+    - Placed prominent white bold version badge (`v1.0.3`) in the top-right corner of `SettingsModal` (`[O]`).
+    - Implemented `src/services/update_service.py` with zero-login GitHub REST API release checker and semver tuple comparator.
+    - Designed `UpdateReminderModal` appearing in screen center upon app startup when a newer release exists, with 1-click browser download (`Enter`) and dismiss (`ESC`).
+    - Executed check in background daemon thread preserving `< 0.1s` offline app launch.
+    - Created automated test suite with 9 unit/UI tests in `tests/test_update_service.py` (total 206 tests passing with 100% success rate).
+    - Released official GitHub version tag **[v1.0.3](https://github.com/X4nd109/Aufgaben-Detector/releases/tag/v1.0.3)** and triggered automated CI/CD installer build.
+- **Previous Achievements (2026-10-18)**:
   - **Digi4School Grabber Sync & Ultra-HD Resolution Standard**:
     - Ported all enhancements from standalone `Digi4School_Book_Grabber` into `src/services/digi4school_service.py`.
     - Upgraded default rendering resolution to **Ultra-HD (`scale=4.0`)** via Playwright `device_scale_factor`.

@@ -28,6 +28,7 @@ graph TD
         GitSync[GitSyncService<br/>git_sync_service.py]
         Schoolbook[SchoolbookService<br/>schoolbook_service.py]
         Digi4School[Digi4SchoolService<br/>digi4school_service.py]
+        Update[UpdateService<br/>update_service.py]
     end
 
     subgraph Storage Layer [cache/ & data/]
@@ -42,6 +43,7 @@ graph TD
     TUI --> Lic
     TUI --> Schoolbook
     TUI --> Digi4School
+    TUI --> Update
     CLI --> Schoolbook
     CLI --> Digi4School
 
@@ -106,14 +108,16 @@ Aufgaben Detector/
 │   │   ├── schoolbook_service.py # Schoolbook indexing, opening & file picker
 │   │   ├── digi4school_service.py # Digi4School book downloader, OCR & TOC generator
 │   │   ├── teams_service.py    # Playwright MS Teams scraper
-│   │   └── untis_service.py    # WebUntis JSON-RPC client
+│   │   ├── untis_service.py    # WebUntis JSON-RPC client
+│   │   └── update_service.py   # GitHub release update checker & semver engine
 │   └── ui/                     # Presentation implementations
 │       ├── tui_app.py          # Interactive Textual TUI
 │       └── ui.py               # Rich terminal rendering utilities
 ├── tests/                      # Automated test suite (pytest / unittest)
 │   ├── test_schoolbooks.py     # Unit tests for schoolbooks & git isolation
 │   ├── test_digi4school.py     # Unit tests for Digi4School downloader & CLI
-│   └── test_dependency_checker.py # Unit tests for pre-flight dependency checker
+│   ├── test_dependency_checker.py # Unit tests for pre-flight dependency checker
+│   └── test_update_service.py  # Unit tests for update checker & modals
 ├── AGENTS.md                   # Tier 1 master documentation index (< 3 KB)
 ├── config.json                 # User configuration file
 ├── config.example.json         # Reference configuration template

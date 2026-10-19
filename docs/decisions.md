@@ -194,3 +194,23 @@ This document records high-impact architectural choices, library selections, and
 - **Consequences**:
   - Positive: Transparent environment diagnostics for end users; deprecation-free console; personal theme favorites synchronize seamlessly across machines without losing custom additions.
   - Negative: Pre-flight check adds ~15ms startup overhead using Python's standard `importlib.util.find_spec`.
+
+---
+
+## ADR-014: Asynchronous GitHub Release Update Notification & Zero-Login Semantic Versioning
+
+- **Date**: 2026-10-19
+- **Status**: Accepted
+- **Context**: As an open-source project with regular GitHub releases and Inno Setup installer builds, users must be kept informed when new features or bug fixes are published. The notification must not block the fast `< 0.1s` offline launch, must require zero authentication credentials, and must cleanly display installed vs. latest versions in the UI.
+- **Decision**:
+  1. **Centralized Version Declaration**: Declare `APP_VERSION = "1.0.3"` and `GITHUB_REPO = "X4nd109/Aufgaben-Detector"` in `src/core/config.py`. Expose `get_app_version()`.
+  2. **Zero-Login Public GitHub API Query**: Use Python standard `urllib.request` in `src/services/update_service.py` targeting `https://api.github.com/repos/{repo}/releases/latest`. With a 3.0s timeout and unauthenticated GET request, no Git CLI or GitHub account is required. All network errors, timeouts, and rate limits fail silently (`None`).
+  3. **Robust Semver Comparison**: Implement `parse_version` and `is_newer_version` using digit tuple extraction and zero-padding (`(1, 0, 3) > (1, 0, 2)`), eliminating extra third-party packaging dependencies.
+  4. **Non-Blocking Startup Thread**: In `AufgabenDetectorApp.on_mount()`, launch `_start_update_checker()` in a background daemon thread. When an update is detected, post `UpdateReminderModal` to the UI thread via `self.call_from_thread`.
+  5. **UI Integration**:
+     - Render white bold version badge in the top-right corner of `SettingsModal` (`#settings_version_tag`).
+     - Display `UpdateReminderModal` centered on screen with 1-click `🌐 Open Release in Browser` (`Enter`) and `↩️ Dismiss` (`ESC`).
+- **Consequences**:
+  - Positive: Seamless, non-intrusive update discovery; 100% offline-friendly with zero login barriers; clean visual version tracking.
+  - Negative: Unauthenticated GitHub API calls are subject to IP-level rate limits (60 requests/hr), which fail silently without impacting user workflow.
+
