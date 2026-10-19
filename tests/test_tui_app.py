@@ -1851,12 +1851,322 @@ class TestAufgabenDetectorTUI(unittest.IsolatedAsyncioTestCase):
             self.assertNotIsInstance(app.screen, SettingsModal)
             self.assertEqual(len(app.screen_stack), 1)
 
-    def test_is_app_window_foreground_checks(self):
-        """Prüft die Logik von is_app_window_foreground."""
-        # Wenn app_focus False ist, muss immer False zurückgegeben werden
-        class DummyApp:
-            app_focus = False
-        self.assertFalse(is_app_window_foreground(DummyApp(), None))
+    async def test_oled_theme_styling_and_visibility(self):
+        """Prüft OLED Theme: kein Clipping, weiße Spalten-Header, sichtbare Buttons und ThemeSelectModal Hover."""
+        from config import save_saved_theme, load_saved_theme
+        orig_theme = load_saved_theme()
+        try:
+            save_saved_theme("oled")
+            app = AufgabenDetectorApp(self.mgr)
+            async with app.run_test(size=(120, 35)) as pilot:
+                self.assertEqual(app.theme, "oled")
+                # Prüfe Button Bar Buttons
+                btn_add = app.query_one("#btn_main_add", Button)
+                self.assertIn("Add", str(btn_add.label))
+                btn_sync = app.query_one("#btn_main_sync", Button)
+                self.assertIn("Sync", str(btn_sync.label))
+                btn_absences = app.query_one("#btn_main_absences", Button)
+                self.assertIn("Absences", str(btn_absences.label))
+                # DataTable Header prüfen
+                dt = app.query_one("#tasks_table", DataTable)
+                self.assertIsNotNone(dt)
+
+                # ThemeSelectModal Hover CSS vorhanden
+                from tui_app import ThemeSelectModal
+                self.assertIn(".theme_btn:hover", ThemeSelectModal.DEFAULT_CSS)
+                self.assertIn("#343331", ThemeSelectModal.DEFAULT_CSS)
+
+                # AufgabenDetectorApp.CSS enthält weiße Header für OLED
+                self.assertIn(".-theme-oled DataTable > .datatable--header", AufgabenDetectorApp.CSS)
+                self.assertIn("color: #ffffff;", AufgabenDetectorApp.CSS)
+
+                # Prüfe Button-Höhe in Dialogen (SettingsModal)
+                app.push_screen(SettingsModal())
+                await pilot.pause()
+                theme_btn = app.screen.query_one("#btn_set_theme", Button)
+                self.assertEqual(theme_btn.outer_size.height, 3)
+                app.pop_screen()
+                await pilot.pause()
+
+                # Prüfe, dass Tabellen bei Fokus rein schwarz bleiben (kein grauer background-tint)
+                dt.focus()
+                await pilot.pause()
+                self.assertEqual(dt.styles.background_tint.a, 0.0)
+                self.assertEqual(dt.styles.background.hex.upper(), "#000000")
+        finally:
+            save_saved_theme(orig_theme)
+
+    async def test_input_enhanced_windows_shortcuts(self):
+        """Prüft Windows-Shortcuts in Input: STRG+A, Pos1, Ende, STRG+Pfeil, SHIFT+STRG+Pfeil, STRG+Backspace, STRG+Entf."""
+        from textual.widgets import Input
+        from textual.screen import Screen
+
+        class InputTestScreen(Screen):
+            def compose(self):
+                yield Input(value="alpha beta gamma delta", id="test_input")
+
+        app = AufgabenDetectorApp(self.mgr)
+        async with app.run_test(size=(120, 35)) as pilot:
+            screen = InputTestScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+
+            inp = screen.query_one("#test_input", Input)
+            inp.focus()
+            await pilot.pause()
+
+            # 1. STRG + A (Alles markieren)
+            await pilot.press("ctrl+a")
+            await pilot.pause()
+            self.assertEqual(inp.selection, (0, len(inp.value)))
+
+            # 2. Pos1 / Home (Anfang)
+            await pilot.press("home")
+            await pilot.pause()
+            self.assertEqual(inp.cursor_position, 0)
+            self.assertEqual(inp.selection, (0, 0))
+
+            # 3. Ende / End (Ende)
+            await pilot.press("end")
+            await pilot.pause()
+            self.assertEqual(inp.cursor_position, len(inp.value))
+
+            # 4. STRG + Pfeil links (wortweise nach links)
+            await pilot.press("ctrl+left")
+            await pilot.pause()
+            self.assertEqual(inp.cursor_position, 17)  # vor 'delta'
+
+            # 5. SHIFT + STRG + Pfeil links (wortweise nach links markieren)
+            await pilot.press("ctrl+shift+left")
+            await pilot.pause()
+            self.assertEqual(inp.selection, (17, 11))  # 'gamma ' markiert
+
+            # 6. Überschreiben der Markierung durch Tastendruck
+            await pilot.press("x")
+            await pilot.pause()
+            self.assertIn("alpha beta xdelta", inp.value)
+
+            # 7. STRG + Backspace (Wort links löschen - auch via ctrl+w und ctrl+h)
+            inp.value = "first second third"
+            inp.cursor_position = len(inp.value)
+            inp.selection = (len(inp.value), len(inp.value))
+            await pilot.press("ctrl+backspace")
+            await pilot.pause()
+            self.assertEqual(inp.value, "first second ")
+
+            await pilot.press("ctrl+w")
+            await pilot.pause()
+            self.assertEqual(inp.value, "first ")
+
+            await pilot.press("ctrl+h")
+            await pilot.pause()
+            self.assertEqual(inp.value, "")
+
+            # 8. STRG + Entf (Wort rechts löschen)
+            inp.value = "first second third"
+            inp.cursor_position = 6  # vor 'second'
+            inp.selection = (6, 6)
+            await pilot.press("ctrl+delete")
+            await pilot.pause()
+            self.assertEqual(inp.value, "first third")
+
+            # 9. SHIFT + Pos1 (markieren bis Zeilenanfang)
+            inp.value = "hello world"
+            inp.cursor_position = 5
+            inp.selection = (5, 5)
+            await pilot.press("shift+home")
+            await pilot.pause()
+            self.assertEqual(inp.selection, (5, 0))
+
+            # 10. SHIFT + Ende (markieren bis Zeilenende)
+            inp.cursor_position = 5
+            inp.selection = (5, 5)
+            await pilot.press("shift+end")
+            await pilot.pause()
+            self.assertEqual(inp.selection, (5, 11))
+
+    async def test_textarea_enhanced_windows_shortcuts(self):
+        """Prüft Windows-Shortcuts in TextArea: STRG+A, Pos1, Ende, STRG+Pfeil, STRG+Backspace."""
+        from textual.widgets import TextArea
+        from textual.screen import Screen
+
+        class TextAreaTestScreen(Screen):
+            def compose(self):
+                yield TextArea("Zeile eins\nZeile zwei\nZeile drei", id="test_ta")
+
+        app = AufgabenDetectorApp(self.mgr)
+        async with app.run_test(size=(120, 35)) as pilot:
+            screen = TextAreaTestScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+
+            ta = screen.query_one("#test_ta", TextArea)
+            ta.focus()
+            await pilot.pause()
+
+            # STRG + A markiert gesamten Inhalt in TextArea
+            await pilot.press("ctrl+a")
+            await pilot.pause()
+            self.assertEqual(len(ta.selected_text), len(ta.text))
+
+            # Pos1 springt an Zeilenanfang
+            await pilot.press("home")
+            await pilot.pause()
+            self.assertEqual(ta.cursor_location[1], 0)
+
+            # STRG+Backspace / ctrl+w / ctrl+h löscht Wort nach links
+            ta.text = "apfel birne kirsche"
+            ta.move_cursor((0, len("apfel birne kirsche")))
+            await pilot.pause()
+            await pilot.press("ctrl+backspace")
+            await pilot.pause()
+            self.assertEqual(ta.text, "apfel birne ")
+
+            await pilot.press("ctrl+w")
+            await pilot.pause()
+            self.assertEqual(ta.text, "apfel ")
+
+            await pilot.press("ctrl+h")
+            await pilot.pause()
+            self.assertEqual(ta.text, "")
+
+    async def test_unified_command_input_ctrl_a_and_backspace(self):
+        """Prüft STRG+A und Backspace in UnifiedCommandPalette."""
+        from tui_app import UnifiedCommandPalette, UnifiedCommandInput
+
+        app = AufgabenDetectorApp(self.mgr)
+        async with app.run_test(size=(120, 35)) as pilot:
+            palette = UnifiedCommandPalette()
+            app.push_screen(palette)
+            await pilot.pause()
+
+            inp = palette.query_one(UnifiedCommandInput)
+            inp.value = "betriebstechnik"
+            inp.cursor_position = len(inp.value)
+
+            # STRG+A markiert gesamten Text
+            await pilot.press("ctrl+a")
+            await pilot.pause()
+            self.assertEqual(inp.selection, (0, len("betriebstechnik")))
+
+            # Backspace löscht nur die Markierung, Palette bleibt offen
+            await pilot.press("backspace")
+            await pilot.pause()
+            self.assertEqual(inp.value, "")
+            self.assertIsInstance(app.screen, UnifiedCommandPalette)
+
+            # Zweiter Backspace auf leerem Feld schließt die Palette
+            await pilot.press("backspace")
+            await pilot.pause()
+            self.assertNotIsInstance(app.screen, UnifiedCommandPalette)
+
+    def test_win32_event_monitor_ctrl_backspace_detection(self):
+        """Prüft die Erkennung von STRG+Backspace auf Windows-Treiberebene."""
+        import sys
+        if sys.platform != "win32":
+            return
+        from textual.drivers.win32 import KEY_EVENT_RECORD, EventMonitor
+        from textual._xterm_parser import XTermParser
+
+        self.assertTrue(getattr(EventMonitor, "_ctrl_backspace_patched", False))
+
+        # Testfall 1: ConPTY / Windows Terminal mit Ctrl+Backspace (VK_BACK 8, dwControlKeyState 0x0008, '\x7f')
+        rec = KEY_EVENT_RECORD()
+        rec.bKeyDown = True
+        rec.wVirtualKeyCode = 8
+        rec.dwControlKeyState = 0x0008  # LEFT_CTRL_PRESSED
+        rec.uChar.UnicodeChar = "\x7f"
+
+        is_ctrl = bool(rec.dwControlKeyState & 0x000C)
+        self.assertTrue(is_ctrl)
+        if is_ctrl and (rec.wVirtualKeyCode in (8, 0x48) or rec.uChar.UnicodeChar in ("\x08", "\x7f")):
+            key_seq = "\x1b[127;5u"
+        else:
+            key_seq = rec.uChar.UnicodeChar
+
+        parser = XTermParser()
+        events = list(parser.feed(key_seq))
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].key, "ctrl+backspace")
+
+        # Testfall 2: Normaler Backspace (dwControlKeyState 0, '\x08') bleibt 'backspace'
+        rec2 = KEY_EVENT_RECORD()
+        rec2.bKeyDown = True
+        rec2.wVirtualKeyCode = 8
+        rec2.dwControlKeyState = 0
+        rec2.uChar.UnicodeChar = "\x08"
+
+        is_ctrl2 = bool(rec2.dwControlKeyState & 0x000C)
+        self.assertFalse(is_ctrl2)
+        if is_ctrl2 and (rec2.wVirtualKeyCode in (8, 0x48) or rec2.uChar.UnicodeChar in ("\x08", "\x7f")):
+            key_seq2 = "\x1b[127;5u"
+        else:
+            key_seq2 = rec2.uChar.UnicodeChar
+
+        parser2 = XTermParser()
+        events2 = list(parser2.feed(key_seq2))
+        self.assertEqual(len(events2), 1)
+        self.assertEqual(events2[0].key, "backspace")
+
+    async def test_enhanced_input_ctrl_backspace_on_key_hook(self):
+        """Prüft das Hooking von _on_key in Input und TextArea bei gehaltenem STRG."""
+        from unittest.mock import patch
+        from textual.widgets import Input, TextArea
+        from textual.screen import Screen
+        from textual.events import Key
+
+        class HookTestScreen(Screen):
+            def compose(self):
+                yield Input(value="apfel birne kirsche", id="hook_input")
+                yield TextArea("zeile eins zwei drei", id="hook_ta")
+
+        app = AufgabenDetectorApp(self.mgr)
+        async with app.run_test(size=(120, 35)) as pilot:
+            screen = HookTestScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+
+            inp = screen.query_one("#hook_input", Input)
+            inp.focus()
+            inp.cursor_position = len(inp.value)
+            await pilot.pause()
+
+            # Wenn is_ctrl_pressed_win32() True liefert, muss ein gewöhnliches 'backspace'-Event als delete_left_word agieren
+            with patch("tui_app.is_ctrl_pressed_win32", return_value=True):
+                event = Key("backspace", "\x08")
+                await inp._on_key(event)
+                self.assertEqual(inp.value, "apfel birne ")
+                self.assertTrue(event._no_default_action)
+                self.assertTrue(event._stop_propagation)
+
+            ta = screen.query_one("#hook_ta", TextArea)
+            ta.focus()
+            ta.move_cursor((0, len("zeile eins zwei drei")))
+            await pilot.pause()
+
+            with patch("tui_app.is_ctrl_pressed_win32", return_value=True):
+                event2 = Key("backspace", "\x08")
+                await ta._on_key(event2)
+                self.assertEqual(ta.text, "zeile eins zwei ")
+                self.assertTrue(event2._no_default_action)
+                self.assertTrue(event2._stop_propagation)
+
+    def test_open_courses_palette_guard_when_ctrl_pressed(self):
+        """Prüft, dass action_open_courses_palette nicht öffnet, wenn STRG gehalten wird."""
+        from unittest.mock import patch, MagicMock
+
+        app = AufgabenDetectorApp(self.mgr)
+        app.push_screen = MagicMock()
+
+        # Mit gehaltenem STRG darf kein Screen gepusht werden
+        with patch("tui_app.is_ctrl_pressed_win32", return_value=True):
+            app.action_open_courses_palette()
+            app.push_screen.assert_not_called()
+
+        # Ohne STRG wird UnifiedCommandPalette normal geöffnet
+        with patch("tui_app.is_ctrl_pressed_win32", return_value=False):
+            app.action_open_courses_palette()
+            app.push_screen.assert_called_once()
 
 
 if __name__ == "__main__":

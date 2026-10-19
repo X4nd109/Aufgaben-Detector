@@ -27,6 +27,9 @@ cache/
 schoolbooks.json
 data/schoolbooks.json
 aufgaben_detector_schoolbooks.json
+directories.json
+data/directories.json
+aufgaben_detector_directories.json
 *.png
 *.log
 

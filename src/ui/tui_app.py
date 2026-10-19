@@ -32,12 +32,372 @@ from textual.widget import Widget
 from textual.message import Message
 from textual.widgets import Button, DataTable, Header, Input, Label, Markdown, Static, TextArea, LoadingIndicator, ProgressBar, Select
 from textual.command import CommandPalette, Provider, DiscoveryHit, Hit, Hits, CommandInput, SearchIcon, CommandList
+from textual.theme import Theme
+from textual.binding import Binding
 import urllib.parse
+
+OLED_THEME = Theme(
+    name="oled",
+    primary="#205EA6",
+    secondary="#24837B",
+    warning="#AD8301",
+    error="#AF3029",
+    success="#66800B",
+    accent="#9B76C8",
+    foreground="#FFFCF0",
+    background="#000000",
+    surface="#000000",
+    panel="#000000",
+    boost="#1c1b1a",
+    dark=True,
+    variables={
+        "border": "#343331",
+        "border-blurred": "#1c1b1a",
+        "surface-active": "#1c1b1a",
+        "block-cursor-background": "#205EA6",
+        "block-cursor-foreground": "#FFFCF0",
+        "input-cursor-foreground": "#9B76C8",
+        "input-cursor-background": "#FFFCF0",
+        "input-selection-background": "#24837B 40%",
+        "button-color-foreground": "#FFFCF0",
+        "footer-background": "#000000",
+        "footer-foreground": "#CECDC3",
+    },
+)
+
+
+def is_ctrl_pressed_win32() -> bool:
+    """Prüft über die Windows Win32-API (GetAsyncKeyState), ob STRG physisch gehalten wird."""
+    if os.name == "nt":
+        try:
+            # 0x11 = VK_CONTROL (prüft linke & rechte STRG-Taste)
+            return bool(ctypes.windll.user32.GetAsyncKeyState(0x11) & 0x8000)
+        except Exception:
+            return False
+    return False
+
+
+def patch_win32_event_monitor() -> None:
+    """
+    Behebt ein bekanntes Problem in Textual unter Windows (Win32 / Windows Terminal / ConPTY):
+    Wenn STRG + Backspace gedrückt wird, liest Textuals win32.EventMonitor zwar das KeyEvent ein,
+    wirft jedoch dwControlKeyState weg und übergibt nur uChar.UnicodeChar ('\x7f' oder '\x08')
+    an XTermParser, welcher dies fälschlicherweise als einfaches 'backspace' anstelle von
+    'ctrl+backspace' parst.
+    Dieser Patch fängt STRG+Backspace auf Windows-Ebene ab und reicht die korrekte Sequenz
+    (\\x1b[127;5u) an den Parser weiter, wodurch zuverlässig das Key-Event 'ctrl+backspace' erzeugt wird.
+    """
+    if os.name != "nt" or sys.platform != "win32":
+        return
+
+    try:
+        from textual.drivers import win32
+        from textual import constants
+        from textual._xterm_parser import XTermParser
+        from ctypes import byref, wintypes
+
+        if getattr(win32.EventMonitor, "_ctrl_backspace_patched", False):
+            return
+
+        def patched_event_monitor_run(self: win32.EventMonitor) -> None:
+            exit_requested = self.exit_event.is_set
+            parser = XTermParser(debug=constants.DEBUG)
+
+            try:
+                read_count = wintypes.DWORD(0)
+                hIn = win32.GetStdHandle(win32.STD_INPUT_HANDLE)
+
+                MAX_EVENTS = 1024
+                KEY_EVENT = 0x0001
+                WINDOW_BUFFER_SIZE_EVENT = 0x0004
+
+                arrtype = win32.INPUT_RECORD * MAX_EVENTS
+                input_records = arrtype()
+                ReadConsoleInputW = win32.KERNEL32.ReadConsoleInputW
+                keys: list[str] = []
+                append_key = keys.append
+
+                while not exit_requested():
+                    for event in parser.tick():
+                        self.process_event(event)
+
+                    # Warten auf neue Events
+                    if win32.wait_for_handles([hIn], 100) is None:
+                        continue
+
+                    ReadConsoleInputW(
+                        hIn, byref(input_records), MAX_EVENTS, byref(read_count)
+                    )
+                    read_input_records = input_records[: read_count.value]
+
+                    del keys[:]
+                    new_size = None
+
+                    for input_record in read_input_records:
+                        event_type = input_record.EventType
+
+                        if event_type == KEY_EVENT:
+                            key_event = input_record.Event.KeyEvent
+                            key = key_event.uChar.UnicodeChar
+                            if key_event.bKeyDown:
+                                # Windows Terminal / ConPTY / conhost Ctrl+Backspace Erkennung:
+                                # 0x0008 = LEFT_CTRL_PRESSED, 0x0004 = RIGHT_CTRL_PRESSED
+                                is_ctrl = bool(key_event.dwControlKeyState & 0x000C)
+                                if is_ctrl and (
+                                    key_event.wVirtualKeyCode in (8, 0x48)
+                                    or key in ("\x08", "\x7f")
+                                ):
+                                    append_key("\x1b[127;5u")
+                                    continue
+
+                                if (
+                                    key_event.dwControlKeyState
+                                    and key_event.wVirtualKeyCode == 0
+                                    and not key
+                                ):
+                                    continue
+                                append_key(key)
+                        elif event_type == WINDOW_BUFFER_SIZE_EVENT:
+                            size = input_record.Event.WindowBufferSizeEvent.dwSize
+                            new_size = (size.X, size.Y)
+
+                    if keys:
+                        for event in parser.feed(
+                            "".join(keys).encode("utf-16", "surrogatepass").decode("utf-16")
+                        ):
+                            self.process_event(event)
+                    if new_size is not None:
+                        self.on_size_change(*new_size)
+
+            except Exception as error:
+                self.app.log.error("EVENT MONITOR ERROR", error)
+
+        win32.EventMonitor.run = patched_event_monitor_run
+        win32.EventMonitor._ctrl_backspace_patched = True
+    except Exception:
+        pass
+
+
+def configure_enhanced_text_inputs() -> None:
+    """
+    Rüstet alle Input- und TextArea-Widgets projektweit mit gängigen
+    Windows-Tastaturkürzeln aus (STRG+A zum Markieren, wortweise Cursor-Bewegung,
+    markieren mit SHIFT+STRG+Pfeiltasten, Pos1/Ende und wortweises Löschen).
+    """
+    patch_win32_event_monitor()
+
+    # 1. Input & Subklassen (CommandInput, UnifiedCommandInput, etc.)
+    new_input_bindings = []
+    replaced_keys = {
+        "ctrl+a",
+        "home",
+        "end",
+        "ctrl+shift+a",
+        "ctrl+left",
+        "ctrl+right",
+        "ctrl+shift+left",
+        "shift+ctrl+left",
+        "ctrl+shift+right",
+        "shift+ctrl+right",
+        "shift+home",
+        "shift+end",
+        "ctrl+backspace",
+        "ctrl+delete",
+        "ctrl+w",
+        "ctrl+h",
+    }
+
+    for b in Input.BINDINGS:
+        keys = [k.strip() for k in b.key.split(",")]
+        rem = [k for k in keys if k not in replaced_keys]
+        if not rem:
+            continue
+        if len(rem) != len(keys):
+            new_input_bindings.append(
+                Binding(
+                    ",".join(rem),
+                    b.action,
+                    b.description,
+                    show=b.show,
+                    key_display=b.key_display,
+                    priority=b.priority,
+                    tooltip=b.tooltip,
+                    id=b.id,
+                    system=b.system,
+                    group=b.group,
+                )
+            )
+        else:
+            new_input_bindings.append(b)
+
+    new_input_bindings.extend(
+        [
+            Binding("ctrl+a", "select_all", "Select all", show=False),
+            Binding("home", "home", "Go to start", show=False),
+            Binding("end,ctrl+e", "end", "Go to end", show=False),
+            Binding("shift+home", "home(True)", "Select line start", show=False),
+            Binding("shift+end", "end(True)", "Select line end", show=False),
+            Binding("ctrl+left", "cursor_left_word", "Move cursor left a word", show=False),
+            Binding("ctrl+right", "cursor_right_word", "Move cursor right a word", show=False),
+            Binding(
+                "ctrl+shift+left,shift+ctrl+left",
+                "cursor_left_word(True)",
+                "Move cursor left a word and select",
+                show=False,
+            ),
+            Binding(
+                "ctrl+shift+right,shift+ctrl+right",
+                "cursor_right_word(True)",
+                "Move cursor right a word and select",
+                show=False,
+            ),
+            Binding("ctrl+backspace,ctrl+w,ctrl+h", "delete_left_word", "Delete left to start of word", show=False),
+            Binding("ctrl+delete,alt+delete", "delete_right_word", "Delete right to start of word", show=False),
+        ]
+    )
+    Input.BINDINGS = new_input_bindings
+    Input._merged_bindings = Input._merge_bindings()
+    CommandInput._merged_bindings = CommandInput._merge_bindings()
+
+    # Hook Input._on_key für unmittelbare Event-Interzeption vor jedem Bubbling
+    if not getattr(Input, "_enhanced_on_key_patched", False):
+        orig_input_on_key = Input._on_key
+
+        async def enhanced_input_on_key(self: Input, event: events.Key) -> None:
+            is_ctrl_backspace = event.key in ("ctrl+backspace", "ctrl+w", "ctrl+h") or (
+                event.key == "backspace" and is_ctrl_pressed_win32()
+            )
+            if is_ctrl_backspace:
+                event.prevent_default()
+                event.stop()
+                self.action_delete_left_word()
+                return
+
+            is_ctrl_del = event.key in ("ctrl+delete", "alt+delete") or (
+                event.key == "delete" and is_ctrl_pressed_win32()
+            )
+            if is_ctrl_del:
+                event.prevent_default()
+                event.stop()
+                self.action_delete_right_word()
+                return
+
+            await orig_input_on_key(self, event)
+
+        Input._on_key = enhanced_input_on_key
+        Input._enhanced_on_key_patched = True
+
+    # 2. TextArea (Notizen, z.B. inp_exam_topics)
+    new_ta_bindings = []
+    ta_replaced = {
+        "ctrl+a",
+        "home",
+        "end",
+        "ctrl+left",
+        "ctrl+right",
+        "ctrl+shift+left",
+        "shift+ctrl+left",
+        "ctrl+shift+right",
+        "shift+ctrl+right",
+        "shift+home",
+        "shift+end",
+        "ctrl+backspace",
+        "ctrl+delete",
+        "ctrl+w",
+        "ctrl+h",
+    }
+
+    for b in TextArea.BINDINGS:
+        keys = [k.strip() for k in b.key.split(",")]
+        rem = [k for k in keys if k not in ta_replaced]
+        if not rem:
+            continue
+        if len(rem) != len(keys):
+            new_ta_bindings.append(
+                Binding(
+                    ",".join(rem),
+                    b.action,
+                    b.description,
+                    show=b.show,
+                    key_display=b.key_display,
+                    priority=b.priority,
+                    tooltip=b.tooltip,
+                    id=b.id,
+                    system=b.system,
+                    group=b.group,
+                )
+            )
+        else:
+            new_ta_bindings.append(b)
+
+    new_ta_bindings.extend(
+        [
+            Binding("ctrl+a", "select_all", "Select all", show=False),
+            Binding("home", "cursor_line_start", "Cursor line start", show=False),
+            Binding("end,ctrl+e", "cursor_line_end", "Cursor line end", show=False),
+            Binding("shift+home", "cursor_line_start(True)", "Cursor line start select", show=False),
+            Binding("shift+end", "cursor_line_end(True)", "Cursor line end select", show=False),
+            Binding("ctrl+left", "cursor_word_left", "Cursor word left", show=False),
+            Binding("ctrl+right", "cursor_word_right", "Cursor word right", show=False),
+            Binding(
+                "ctrl+shift+left,shift+ctrl+left",
+                "cursor_word_left(True)",
+                "Cursor left word select",
+                show=False,
+            ),
+            Binding(
+                "ctrl+shift+right,shift+ctrl+right",
+                "cursor_word_right(True)",
+                "Cursor right word select",
+                show=False,
+            ),
+            Binding("ctrl+backspace,ctrl+w,ctrl+h", "delete_word_left", "Delete left to start of word", show=False),
+            Binding("ctrl+delete,alt+delete", "delete_word_right", "Delete right to start of word", show=False),
+        ]
+    )
+    TextArea.BINDINGS = new_ta_bindings
+    TextArea._merged_bindings = TextArea._merge_bindings()
+
+    # Hook TextArea._on_key für unmittelbare Event-Interzeption vor jedem Bubbling
+    if not getattr(TextArea, "_enhanced_on_key_patched", False):
+        orig_textarea_on_key = TextArea._on_key
+
+        async def enhanced_textarea_on_key(self: TextArea, event: events.Key) -> None:
+            is_ctrl_backspace = event.key in ("ctrl+backspace", "ctrl+w", "ctrl+h") or (
+                event.key == "backspace" and is_ctrl_pressed_win32()
+            )
+            if is_ctrl_backspace:
+                event.prevent_default()
+                event.stop()
+                self.action_delete_word_left()
+                return
+
+            is_ctrl_del = event.key in ("ctrl+delete", "alt+delete") or (
+                event.key == "delete" and is_ctrl_pressed_win32()
+            )
+            if is_ctrl_del:
+                event.prevent_default()
+                event.stop()
+                self.action_delete_word_right()
+                return
+
+            await orig_textarea_on_key(self, event)
+
+        TextArea._on_key = enhanced_textarea_on_key
+        TextArea._enhanced_on_key_patched = True
+
+
+configure_enhanced_text_inputs()
 
 try:
     from schoolbook_service import SchoolbookService
 except ImportError:
     from src.services.schoolbook_service import SchoolbookService
+
+try:
+    from directory_service import DirectoryService
+except ImportError:
+    from src.services.directory_service import DirectoryService
 
 try:
     from digi4school_service import Digi4SchoolService, find_tesseract
@@ -1420,9 +1780,12 @@ class UnifiedQuickOpenProvider(Provider):
 
     @property
     def current_mode(self) -> str:
-        """Ermittelt den aktuellen Modus der Palette ('courses' oder 'books')."""
-        if hasattr(self.app, "screen") and isinstance(self.app.screen, UnifiedCommandPalette):
-            return getattr(self.app.screen, "active_mode", UnifiedCommandPalette.current_mode)
+        """Ermittelt den aktuellen Modus der Palette ('courses', 'books' oder 'directories')."""
+        try:
+            if hasattr(self.app, "screen") and isinstance(self.app.screen, UnifiedCommandPalette):
+                return getattr(self.app.screen, "active_mode", UnifiedCommandPalette.current_mode)
+        except Exception:
+            pass
         return getattr(UnifiedCommandPalette, "current_mode", "courses")
 
     async def discover(self) -> Hits:
@@ -1446,7 +1809,7 @@ class UnifiedQuickOpenProvider(Provider):
                     text=f"{c['platform']} {c['subject']} {c['display_title']}",
                     help=url,
                 )
-        else:
+        elif mode == "books":
             # Schoolbooks mode
             yield DiscoveryHit(
                 display="📂 [b]Link local PDF[/b] (/link)",
@@ -1485,6 +1848,33 @@ class UnifiedQuickOpenProvider(Provider):
                         display=display,
                         command=lambda item=b: getattr(self.app, "open_schoolbook", lambda _b: None)(item),
                         text=f"{title} {path} {b_type}",
+                        help=path,
+                    )
+        else:
+            # Directories mode
+            yield DiscoveryHit(
+                display="📂 [b]Link local folder[/b] (/link)",
+                command=lambda: getattr(self.app, "action_link_directory", lambda: None)(),
+                text="/link link local folder directory select folder Explorer",
+                help="Opens folder picker to select a local directory on your computer",
+            )
+            dirs = DirectoryService.load_directories()
+            if not dirs:
+                yield DiscoveryHit(
+                    display="ℹ️ [dim]No directories linked yet. Type '/link' to link a folder.[/dim]",
+                    command=lambda: getattr(self.app, "action_link_directory", lambda: None)(),
+                    text="/link",
+                    help="Type /link to select and link a local folder",
+                )
+            else:
+                for d in dirs:
+                    title = d.get("title", "Directory")
+                    path = d.get("path", "")
+                    display = f"📁 [b]{title}[/b] [dim]({path})[/dim]"
+                    yield DiscoveryHit(
+                        display=display,
+                        command=lambda item=d: getattr(self.app, "open_directory", lambda _d: None)(item),
+                        text=f"{title} {path}",
                         help=path,
                     )
 
@@ -1539,7 +1929,7 @@ class UnifiedQuickOpenProvider(Provider):
                             text=full,
                             help=url,
                         )
-        else:
+        elif mode == "books":
             # Schoolbooks Mode
             is_link_cmd = q_lower.startswith("/link") or q_lower.startswith("/url") or q_lower == "link" or q_lower == "url"
             is_unlink_cmd = (
@@ -1673,17 +2063,114 @@ class UnifiedQuickOpenProvider(Provider):
                             text=full,
                             help=path,
                         )
+        else:
+            # Directories Mode
+            is_link_cmd = q_lower.startswith("/link") or q_lower == "link"
+            is_unlink_cmd = (
+                q_lower in ("/unlink", "unlink", "/del", "del", "/delete", "delete", "/remove", "remove")
+                or q_lower.startswith("/unlink")
+                or q_lower.startswith("/delete")
+            )
+
+            if q_clean == "/":
+                yield Hit(
+                    score=1.0,
+                    match_display="📂 [b]Select local folder in file explorer...[/b] (/link)",
+                    command=lambda: getattr(self.app, "action_link_directory", lambda: None)(),
+                    text="/link select local folder directory",
+                    help="Opens folder picker to select a local directory",
+                )
+                yield Hit(
+                    score=0.98,
+                    match_display="🗑️ [b]Delete directory link...[/b] (/unlink)",
+                    command=lambda: getattr(self.app, "action_prompt_unlink_directory", lambda: None)(),
+                    text="/unlink remove delete directory folder",
+                    help="Press [Enter] to show linked directories for removal",
+                )
+                dirs = DirectoryService.load_directories()
+                for idx, d in enumerate(dirs):
+                    title = d.get("title", "")
+                    path = d.get("path", "")
+                    display = f"📁 [b]{title}[/b] [dim]({path})[/dim]"
+                    yield Hit(
+                        score=0.95 - (idx * 0.001),
+                        match_display=display,
+                        command=lambda item=d: getattr(self.app, "open_directory", lambda _d: None)(item),
+                        text=f"{title} {path}",
+                        help=path,
+                    )
+            elif is_link_cmd:
+                yield Hit(
+                    score=1.0,
+                    match_display="📂 [b]Select local folder in file explorer...[/b] (/link)",
+                    command=lambda: getattr(self.app, "action_link_directory", lambda: None)(),
+                    text="/link select local folder directory",
+                    help="Opens folder picker to select a local directory",
+                )
+
+            if is_unlink_cmd:
+                dirs = DirectoryService.load_directories()
+                for idx, d in enumerate(dirs):
+                    d_id = d.get("id")
+                    title = d.get("title", "Directory")
+                    yield Hit(
+                        score=0.98 - (idx * 0.001),
+                        match_display=f"🗑️ [red]Delete:[/red] {title}",
+                        command=lambda did=d_id, t=title: getattr(self.app, "action_delete_directory", lambda _id, _t: None)(did, t),
+                        text=f"/unlink {title}",
+                        help=f"Press [Enter] to remove the link to '{title}'",
+                    )
+            elif not is_link_cmd:
+                matcher = self.matcher(query)
+                dirs = DirectoryService.load_directories()
+                for d in dirs:
+                    title = d.get("title", "")
+                    path = d.get("path", "")
+                    full = f"{title} {os.path.basename(path)} {path}"
+                    score = matcher.match(full)
+                    if score > 0:
+                        display = f"📁 [b]{title}[/b] [dim]({path})[/dim]"
+                        yield Hit(
+                            score=score,
+                            match_display=matcher.highlight(display),
+                            command=lambda item=d: getattr(self.app, "open_directory", lambda _d: None)(item),
+                            text=full,
+                            help=path,
+                        )
 
 
 # Rückwärtskompatibilität
 CourseLinksProvider = UnifiedQuickOpenProvider
 
 
+class UnifiedCommandInput(CommandInput):
+    """CommandInput that closes the command palette when Backspace is pressed on an empty input."""
+
+    def action_delete_left(self) -> None:
+        if is_ctrl_pressed_win32():
+            self.action_delete_left_word()
+            return
+        if not self.value:
+            try:
+                scr = self.screen
+                if hasattr(scr, "_action_escape"):
+                    scr._action_escape()
+                elif hasattr(scr, "dismiss"):
+                    scr.dismiss()
+            except Exception:
+                pass
+            return
+        super().action_delete_left()
+
+
+UnifiedCommandInput._merged_bindings = UnifiedCommandInput._merge_bindings()
+
+
 class UnifiedCommandPalette(CommandPalette):
     """
-    Erweiterte Befehlspalette für schnelles Öffnen von Kursen und Schulbüchern.
-    Umschalten zwischen Kurse und Schulbücher über die Tabulator-Taste.
-    Zeigt als Header nur das gerade aktive Menü an ('Kurse' in Blau bzw. 'Schulbücher' in Rot).
+    Erweiterte Befehlspalette für schnelles Öffnen von Kursen, Schulbüchern und Verzeichnissen.
+    Umschalten zwischen Kurse, Schulbücher und Verzeichnisse über die Tabulator-Taste.
+    Zeigt als Header nur das gerade aktive Menü an ('Courses' in Cyan, 'Schoolbooks' in Rot, 'Directories' in Grün).
     """
 
     current_mode: str = "courses"
@@ -1722,24 +2209,39 @@ class UnifiedCommandPalette(CommandPalette):
         self.active_mode = initial_mode
         UnifiedCommandPalette.current_mode = initial_mode
 
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "backspace":
+            try:
+                inp = self.query_one(CommandInput)
+                if not inp.value:
+                    event.prevent_default()
+                    event.stop()
+                    self._action_escape()
+            except Exception:
+                pass
+
     def _get_header_text(self) -> str:
         if self.active_mode == "courses":
             return "[bold cyan]Courses[/bold cyan]"
-        else:
+        elif self.active_mode == "books":
             return "[bold red]Schoolbooks[/bold red]"
+        else:
+            return "[bold green]Directories[/bold green]"
 
     def _get_placeholder(self) -> str:
         if self.active_mode == "courses":
             return "Search courses or /r to reload..."
-        else:
+        elif self.active_mode == "books":
             return "Search schoolbooks (/link, /url, /download)..."
+        else:
+            return "Search directories (/link, /unlink)..."
 
     def compose(self) -> ComposeResult:
         with Vertical(id="--container"):
             yield Static(self._get_header_text(), id="palette-mode-header")
             with Horizontal(id="--input"):
                 yield SearchIcon()
-                yield CommandInput(placeholder=self._get_placeholder(), select_on_focus=False)
+                yield UnifiedCommandInput(placeholder=self._get_placeholder(), select_on_focus=False)
                 if not self.run_on_select:
                     yield Button("▶")
             with Vertical(id="--results"):
@@ -1754,20 +2256,22 @@ class UnifiedCommandPalette(CommandPalette):
             pass
 
     def action_switch_mode(self) -> None:
-        """Wechselt zwischen Kurse und Schulbücher, leert die Suchleiste und aktualisiert die Treffer."""
-        self.active_mode = "books" if self.active_mode == "courses" else "courses"
+        """Wechselt zwischen Kurse, Schulbücher und Verzeichnisse, behält den eingegebenen Text und aktualisiert die Treffer."""
+        if self.active_mode == "courses":
+            self.active_mode = "books"
+        elif self.active_mode == "books":
+            self.active_mode = "directories"
+        else:
+            self.active_mode = "courses"
         UnifiedCommandPalette.current_mode = self.active_mode
         self._update_header()
 
         try:
             inp = self.query_one(CommandInput)
             inp.placeholder = self._get_placeholder()
-            if inp.value != "":
-                inp.value = ""
-            else:
-                self._cancel_gather_commands()
-                self._stop_no_matches_countdown()
-                self._gather_commands("")
+            self._cancel_gather_commands()
+            self._stop_no_matches_countdown()
+            self._gather_commands(inp.value)
         except Exception:
             pass
 
@@ -2524,6 +3028,10 @@ class ThemeSelectModal(ModalScreen[Optional[str]]):
         width: 100%;
         margin-bottom: 1;
     }
+    .theme_btn:hover, .theme_btn:focus {
+        background: #343331;
+        color: #ffffff;
+    }
     #theme_cancel_row {
         height: auto;
         align: center middle;
@@ -2558,6 +3066,7 @@ class ThemeSelectModal(ModalScreen[Optional[str]]):
         ("atom-one-dark", "⚛️ Atom One Dark (Classic Editor)"),
         ("atom-one-light", "💡 Atom One Light (Clean Modern)"),
         ("flexoki", "🌿 Flexoki (Inky Earth Tones)"),
+        ("oled", "🌑 OLED (Pure Black & Flexoki Accents)"),
         ("textual-dark", "🖤 Textual Dark (Deep Midnight)"),
         ("textual-light", "🤍 Textual Light (Pure Paper)"),
         ("ansi-dark", "📟 ANSI Dark (Vintage Terminal)"),
@@ -5648,6 +6157,150 @@ class AufgabenDetectorApp(App):
     Toast.-error .toast--title {
         color: #f38ba8;
     }
+
+    /* OLED Theme: Pure black surfaces, styled bars & colored/gray buttons */
+    .-theme-oled Screen {
+        background: #000000;
+    }
+    .-theme-oled #tasks_table,
+    .-theme-oled #exams_table_container,
+    .-theme-oled #exams_table,
+    .-theme-oled #abs_split_container,
+    .-theme-oled #abs_subject_box,
+    .-theme-oled #abs_detail_box,
+    .-theme-oled #abs_subject_table,
+    .-theme-oled #abs_detail_table {
+        background: #000000;
+    }
+    .-theme-oled DataTable,
+    .-theme-oled DataTable:focus {
+        background: #000000;
+        background-tint: transparent;
+    }
+    .-theme-oled DataTable > .datatable--header,
+    .-theme-oled DataTable:focus > .datatable--header {
+        background: #100f0f;
+        background-tint: transparent;
+        color: #ffffff;
+        text-style: bold;
+    }
+    .-theme-oled DataTable > .datatable--cursor,
+    .-theme-oled DataTable:focus > .datatable--cursor {
+        background: #205ea6;
+        color: #ffffff;
+    }
+    .-theme-oled DataTable > .datatable--even-row,
+    .-theme-oled DataTable:focus > .datatable--even-row,
+    .-theme-oled DataTable > .datatable--odd-row,
+    .-theme-oled DataTable:focus > .datatable--odd-row {
+        background: #000000;
+    }
+    .-theme-oled #info_bar {
+        background: #000000;
+    }
+    .-theme-oled #button_bar {
+        background: #000000;
+    }
+    .-theme-oled Header {
+        background: #000000;
+    }
+    .-theme-oled #exams_header,
+    .-theme-oled #exams_button_bar,
+    .-theme-oled #absences_header,
+    .-theme-oled #absences_button_bar {
+        background: #000000;
+    }
+    .-theme-oled Button {
+        height: 3;
+        border: none;
+        background: #282726;
+        color: #ffffff;
+        content-align: center middle;
+    }
+    .-theme-oled Button:hover {
+        background: #343331;
+        color: #ffffff;
+    }
+    .-theme-oled Button.-primary {
+        background: #205ea6;
+        color: #ffffff;
+        border: none;
+    }
+    .-theme-oled Button.-primary:hover {
+        background: #2868b2;
+    }
+    .-theme-oled Button.-success {
+        background: #66800b;
+        color: #ffffff;
+        border: none;
+    }
+    .-theme-oled Button.-success:hover {
+        background: #75920d;
+    }
+    .-theme-oled Button.-error {
+        background: #af3029;
+        color: #ffffff;
+        border: none;
+    }
+    .-theme-oled Button.-error:hover {
+        background: #c33a32;
+    }
+    .-theme-oled Button.-warning {
+        background: #ad8301;
+        color: #ffffff;
+        border: none;
+    }
+    .-theme-oled Button.-warning:hover {
+        background: #ba8d03;
+    }
+    .-theme-oled #button_bar Button {
+        border: none;
+        color: #ffffff;
+    }
+    .-theme-oled .theme_btn:hover,
+    .-theme-oled .theme_btn:focus {
+        background: #343331;
+        color: #ffffff;
+    }
+    .-theme-oled #add_dialog,
+    .-theme-oled #status_dialog,
+    .-theme-oled #plat_dialog,
+    .-theme-oled #tf_dialog,
+    .-theme-oled #filter_dialog,
+    .-theme-oled #book_url_dialog,
+    .-theme-oled #digi_download_dialog,
+    .-theme-oled #d4s_progress_dialog,
+    .-theme-oled #update_dialog,
+    .-theme-oled #settings_dialog,
+    .-theme-oled #theme_dialog,
+    .-theme-oled #subj_dialog,
+    .-theme-oled #detail_dialog,
+    .-theme-oled #trash_dialog,
+    .-theme-oled #moodle_dialog,
+    .-theme-oled #teams_dialog,
+    .-theme-oled #login_choice_dialog,
+    .-theme-oled #git_setup_dialog,
+    .-theme-oled #untis_dialog,
+    .-theme-oled #school_config_dialog,
+    .-theme-oled #excuse_dialog,
+    .-theme-oled #add_exam_dialog,
+    .-theme-oled #exam_detail_dialog {
+        background: #000000;
+        border: thick #343331;
+    }
+    .-theme-oled UnifiedCommandPalette #--container {
+        background: #000000;
+        border: thick #24837b;
+    }
+    .-theme-oled CommandPalette #--container {
+        background: #000000;
+        border: thick #205ea6;
+    }
+    .-theme-oled Toast {
+        background: #000000;
+        border-left: outer #24837b;
+        color: #fffcf0;
+    }
     """
 
     BINDINGS = [
@@ -5714,7 +6367,8 @@ class AufgabenDetectorApp(App):
         self._mouse_listener_thread: Optional[threading.Thread] = None
         self._terminal_hwnd: Optional[int] = None
 
-        # Theme initialisieren & nur die 5 wichtigsten Themes behalten
+        # Theme initialisieren & nur die erlaubten Themes behalten
+        self.register_theme(OLED_THEME)
         saved_theme = load_saved_theme()
         if saved_theme in ALLOWED_THEMES:
             self.theme = saved_theme
@@ -6273,6 +6927,9 @@ class AufgabenDetectorApp(App):
 
     def action_open_courses_palette(self, initial_mode: str = "courses") -> None:
         """Opens the UnifiedCommandPalette to quickly search and launch courses or schoolbooks."""
+        # Verhindern, dass gehaltenes STRG bei versehentlichem Durchrutschen von Backspace das Menü öffnet
+        if is_ctrl_pressed_win32():
+            return
         self.push_screen(
             UnifiedCommandPalette(
                 providers=[UnifiedQuickOpenProvider],
@@ -6357,6 +7014,61 @@ class AufgabenDetectorApp(App):
 
     def action_prompt_unlink_schoolbook(self) -> None:
         """Sets the search bar to /unlink to list all books for removal."""
+        try:
+            if hasattr(self, "screen") and isinstance(self.screen, UnifiedCommandPalette):
+                inp = self.screen.query_one(CommandInput)
+                inp.value = "/unlink"
+        except Exception:
+            pass
+
+    def open_directory(self, directory: dict) -> None:
+        """Opens a directory in the system file explorer."""
+        ok, msg = DirectoryService.open_directory(directory)
+        if ok:
+            self.notify(f"✓ {msg}", severity="information")
+        else:
+            self.notify(f"⚠️ {msg}", severity="error")
+
+    def action_link_directory(self) -> None:
+        """Opens Windows folder picker in background thread to link a local folder."""
+        self.notify("📂 Opening folder picker...", severity="information")
+
+        def _worker():
+            try:
+                folder_path = DirectoryService.pick_directory()
+                if folder_path:
+                    entry = DirectoryService.add_directory(folder_path)
+                    title = entry.get("title", "Directory")
+                    self.call_from_thread(
+                        self.notify,
+                        f"✓ Directory '{title}' successfully linked!",
+                        severity="information",
+                    )
+                    self.call_from_thread(lambda: self.action_open_courses_palette(initial_mode="directories"))
+                else:
+                    self.call_from_thread(
+                        self.notify,
+                        "Folder selection cancelled.",
+                        severity="warning",
+                    )
+                    self.call_from_thread(lambda: self.action_open_courses_palette(initial_mode="directories"))
+            except Exception as e:
+                self.call_from_thread(
+                    self.notify,
+                    f"Error during folder selection: {e}",
+                    severity="error",
+                )
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def action_delete_directory(self, dir_id: str, title: str) -> None:
+        """Deletes a linked directory and reopens the palette in directories mode."""
+        DirectoryService.remove_directory(dir_id)
+        self.notify(f"✓ Directory '{title}' removed.", severity="information")
+        self.action_open_courses_palette(initial_mode="directories")
+
+    def action_prompt_unlink_directory(self) -> None:
+        """Sets the search bar to /unlink to list all directories for removal."""
         try:
             if hasattr(self, "screen") and isinstance(self.screen, UnifiedCommandPalette):
                 inp = self.screen.query_one(CommandInput)

@@ -214,3 +214,23 @@ This document records high-impact architectural choices, library selections, and
   - Positive: Seamless, non-intrusive update discovery; 100% offline-friendly with zero login barriers; clean visual version tracking.
   - Negative: Unauthenticated GitHub API calls are subject to IP-level rate limits (60 requests/hr), which fail silently without impacting user workflow.
 
+---
+
+## ADR-015: 5-Tier Hybrid Architecture for Windows Terminal Shortcut Normalization
+
+- **Date**: 2026-10-19
+- **Status**: Accepted
+- **Context**: 
+  1. Standard Windows text editing shortcuts (`Ctrl+Backspace`, `Ctrl+Delete`, `Ctrl+A`, `Home`, `End`, `Shift+Ctrl+Arrows`) are expected by Windows desktop users across all inputs.
+  2. In terminal emulators (Windows Terminal, conhost, ConPTY, xterm), modifier states for control codes (especially `Ctrl+Backspace`, which transmits `\x08` or `\x7f`) are frequently swallowed or mapped to plain `backspace` by Textual's parser.
+  3. When mapped to `backspace`, key events bubbled to global App bindings, causing `Ctrl+Backspace` to erroneously trigger `action_open_courses_palette` (opening the menu) on the main screen or `action_delete_left` (closing the palette) in `UnifiedCommandInput`.
+- **Decision**: Implement a 5-tier hybrid defense architecture:
+  1. **Win32 Driver Patch (`patch_win32_event_monitor`)**: Monkeypatch Textual's `win32.EventMonitor.run` to intercept `VK_BACK` / `\x08` / `\x7f` with `dwControlKeyState & 0x000C` and emit the Kitty sequence `\x1b[127;5u`. Ensure synthesized ConPTY events with `wVirtualKeyCode == 0` containing characters are not discarded.
+  2. **Hardware Keyboard Hook (`is_ctrl_pressed_win32`)**: Hook `Input._on_key` and `TextArea._on_key`. Query the OS directly via `user32.GetAsyncKeyState(0x11)` (`VK_CONTROL`). When `backspace` or `delete` is detected while Ctrl is down, immediately stop event propagation (`event.stop()`, `event.prevent_default()`) and trigger word deletion.
+  3. **CommandPalette Guard**: In `UnifiedCommandInput.action_delete_left()`, check `is_ctrl_pressed_win32()`; if active, delegate to `action_delete_left_word()` to prevent accidental palette dismissal.
+  4. **App Menu Guard**: In `AufgabenDetectorApp.action_open_courses_palette()`, verify `is_ctrl_pressed_win32()` is False before opening the palette.
+  5. **Standard Bindings**: Maintain explicit bindings for `ctrl+backspace,ctrl+w,ctrl+h` and `ctrl+delete,alt+delete` across all inputs.
+- **Consequences**:
+  - Positive: 100% reliable word deletion across all terminal emulators on Windows; zero collisions with global Backspace shortcuts; graceful fallback on non-Windows platforms.
+  - Negative: Direct Win32 API calls (`ctypes.windll.user32`) are platform-specific, guarded by `if os.name == "nt"`.
+

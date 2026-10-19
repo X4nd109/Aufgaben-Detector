@@ -11,7 +11,7 @@
 | :--- | :--- | :--- |
 | `Main Task Dashboard` | Screen | Farbcodierte Haupttabelle aller offenen und fälligen Moodle- und Teams-Aufgaben (`AufgabenDetectorApp`). |
 | `Tests & Exams Screen` (`[E]`) | Screen | WebUntis Prüfungskalender mit Datums-, Raum- und Fachangaben sowie Prüfungstyp (`ExamsScreen`). |
-| `CommandPalette` (`Backspace` / `/`) | Overlay | Schnellsuchleiste mit `Tab`-Umschaltung zwischen *Courses* (Moodle-Links) und *Schoolbooks*. |
+| `CommandPalette` (`Backspace` / `/`) | Overlay | Schnellsuchleiste mit `Tab`-Umschaltung zwischen *Courses*, *Schoolbooks* und *Directories*; `Backspace` bei leerer Leiste schließt das Menü; behält Suchtext beim Umschalten. |
 | `Trash / Hidden Screen` (`[G]`) | Modal | Übersicht aller ausgeblendeten oder gelöschten Aufgaben mit Wiederherstellungsoption (`TrashModal`). |
 
 ---
@@ -51,15 +51,15 @@
 | `Restore` | `[W]` / `btn_restore_task` | Stellt eine gelöschte Aufgabe aus dem Papierkorb wieder her. |
 | `Generate Excuse PDF` | `btn_generate_excuse` | Erzeugt das druckfertige Entschuldigungsschreiben als PDF und öffnet den System-Betrachter. |
 | `Synchronize` | `[R]` / `btn_sync` | Startet den sofortigen Hintergrund-Abgleich mit Moodle, Teams und WebUntis. |
-| `Change Theme` | `[T]` / `Ctrl+P` | Rotiert durch die 21 Themes oder öffnet die Theme-Palette (`search_themes`) mit Rechtsklick-Favoriten (`⭐`). |
-| `ThemeSelectModal` | Modal | Menü zur Auswahl aus allen 21 Themes; Rechtsklick markiert ein Theme als Favorit (`⭐`), Favoriten stehen ganz oben. |
+| `Change Theme` | `[T]` / `Ctrl+P` | Rotiert durch die 22 Themes oder öffnet die Theme-Palette (`search_themes`) mit Rechtsklick-Favoriten (`⭐`). |
+| `ThemeSelectModal` | Modal | Menü zur Auswahl aus allen 22 Themes (inkl. `OLED`); Rechtsklick markiert ein Theme als Favorit (`⭐`), Favoriten stehen ganz oben. |
 | `Render Quality` | `digi_select_quality` | Wählt die Renderqualität im Digi4School-Download-Dialog (Ultra-HD 4.0x, High-Res 3.0x, Standard 2.0x). |
 | `Start Download` | `btn_start_digi_download` | Prüft Tesseract OCR und startet den automatisierten Digi4School Buchdownload. |
 | `Show in Downloads folder` | `btn_open_folder_d4s` | Öffnet den Downloads-Ordner nach erfolgreichem Buchdownload direkt im Windows Explorer. |
 
 ---
 
-## 4. CommandPalette Befehle (Schulbücher & Kurse)
+## 4. CommandPalette Befehle (Kurse, Schulbücher & Ordner)
 
 | Befehl / Syntax | Modus | Kurzbeschreibung |
 | :--- | :--- | :--- |
@@ -69,6 +69,9 @@
 | `/url <URL>` | Books | Öffnet den Eingabedialog zum Hinterlegen eines webbasierten Schulbuchs. |
 | `/download <Code>` | Books | Startet den Digi4School Grabber und erzeugt ein durchsuchbares OCR-Sandwich-PDF. |
 | `/unlink` | Books | Entfernt ein verknüpftes Buch aus der lokalen Liste (`data/schoolbooks.json`). |
+| `<Suchbegriff>` | Directories (Grün) | Durchsucht verknüpfte Ordner nach Name oder Pfad und öffnet sie im Explorer. |
+| `/link` | Directories | Öffnet den nativen Windows-Ordnerauswahldialog zum Verknüpfen eines lokalen Ordners. |
+| `/unlink` | Directories | Entfernt eine Ordnerverknüpfung aus der lokalen Liste (`data/directories.json`). |
 
 ---
 
@@ -84,4 +87,28 @@
 | `tasks books open <id>` | — | Startet das angegebene Schulbuch im OS-Standardviewer oder Webbrowser. |
 | `tasks books add <pfad>` | `--title <titel>` | Verknüpft eine lokale PDF-Datei oder Web-URL headless als Schulbuch. |
 | `tasks books download <code>` | `[--quality <q>] [--scale <s>] [--dpi <d>] [--no-ocr] [--no-toc] [--page-offset <o>] [--visible]` | Lädt ein Digi4School-Buch im Terminal herunter und generiert ein OCR-PDF (Ultra-HD Standard). |
+| `tasks dirs list` | `--json` | Gibt alle verknüpften lokalen Ordner aus. |
+| `tasks dirs open <id\|name>` | — | Öffnet das verknüpfte Verzeichnis im System-Dateimanager (Windows Explorer). |
+| `tasks dirs add <pfad>` | `--title <name>` | Verknüpft einen lokalen Ordnerpfad headless mit automatischer oder manueller Benennung. |
+| `tasks dirs remove <id\|name>` | — | Entfernt eine Ordnerverknüpfung aus der lokalen Liste (`data/directories.json`). |
 | `tasks sync` | `--deep` | Führt eine vollständige Plattform-Synchronisation im Hintergrund durch. |
+
+---
+
+## 6. Text-Eingabefelder & Windows-Shortcuts
+
+Projektweit für alle einzeiligen `Input`-Widgets (CommandPalette, Suchleisten, Aufgaben- und Prüfungsformulare, Logins, Schulkonfiguration) sowie mehrzeilige `TextArea`-Notizen:
+
+| Shortcut | Aktion | Beschreibung |
+| :--- | :--- | :--- |
+| `STRG + ←` / `STRG + →` | Wortweise springen | Bewegt den Cursor um ein ganzes Wort nach links oder rechts (`cursor_left_word` / `cursor_right_word`). |
+| `SHIFT + STRG + ←` / `→` | Wortweise markieren | Bewegt den Cursor wortweise und markiert dabei den Textbereich (`cursor_left_word(True)` / `cursor_right_word(True)`). |
+| `Pos1` (`Home`) / `Ende` (`End`) | Zeilenanfang / Zeilenende | Springt direkt an den Anfang oder das Ende der aktuellen Zeile (`home` / `end`). |
+| `SHIFT + Pos1` / `SHIFT + Ende` | Bis Anfang/Ende markieren | Markiert vom aktuellen Cursor bis zum Zeilenanfang oder Zeilenende (`home(True)` / `end(True)`). |
+| `STRG + A` | Alles markieren | Markiert den gesamten Inhalt des Textfeldes (ersetzt Textuals Default `home`). |
+| `STRG + Backspace` | Wort links löschen | Löscht das gesamte Wort links vom Cursor (`delete_left_word` / `delete_word_left`). Funktioniert in allen Terminals dank Win32-Treiber-Patch und Aliase `ctrl+w` & `ctrl+h`. |
+| `STRG + Entf` | Wort rechts löschen | Löscht das gesamte Wort rechts vom Cursor (`delete_right_word` / `delete_word_right`). |
+| `Tippen / Backspace` | Markierung überschreiben | Ersetzt oder löscht aktive Textauswahlen sofort bei der nächsten Eingabe. |
+| `STRG + C` / `X` / `V` | Clipboard | Kopiert, schneidet aus oder fügt aus der Windows-Zwischenablage ein. |
+
+

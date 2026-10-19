@@ -1,2 +1,4 @@
-# Machine-specific schoolbooks paths (do not sync)
+# Machine-specific schoolbooks and directory paths (do not sync)
 schoolbooks.json
+directories.json
+

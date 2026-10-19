@@ -402,6 +402,23 @@ Fast (<0.1s offline cache) & token-efficient CLI designed for AI agents.
   tasks restore <id|index> [--json]
     Restore a hidden/deleted assignment.
 
+  tasks books [list|open|add|remove|download] [--json]
+    Manage and open schoolbooks (PDF, Web, Digi4School).
+    Subcommands:
+      list                       List all linked schoolbooks
+      open <id|index>            Open schoolbook in default viewer or browser
+      add <path|url> [--title]   Link a local PDF or online schoolbook
+      remove <id|index>          Remove linked schoolbook
+      download <code>            Download Digi4School book with OCR
+
+  tasks dirs [list|open|add|remove] [--json]
+    Manage and open linked local directories in file explorer.
+    Subcommands:
+      list                       List all linked directories
+      open <id|index|name>       Open directory in system file explorer
+      add <path> [--title]       Link a local folder path (auto-titled from folder)
+      remove <id|index|name>     Remove linked directory
+
   tasks sync [--deep] [--json]
     Perform live network sync with Moodle & Teams in background/terminal.
 
@@ -410,7 +427,7 @@ Fast (<0.1s offline cache) & token-efficient CLI designed for AI agents.
 
 ## Shorthand Flags
   All commands can also be called as flags:
-  `tasks -list`, `tasks --list`, `tasks -open sesd`, `tasks -courses`, `tasks -show 1`, `tasks -sync`
+  `tasks -list`, `tasks --list`, `tasks -open sesd`, `tasks -courses`, `tasks -show 1`, `tasks -sync`, `tasks -dirs`
 """
 
 
@@ -497,7 +514,8 @@ def is_agent_cli_command(argv: List[str]) -> bool:
         "restore", "unhide", "undelete",
         "sync", "guide", "agent-guide", "help",
         "open", "course", "courses", "courselist",
-        "books", "book", "schulbuch", "schulbücher"
+        "books", "book", "schulbuch", "schulbücher",
+        "dirs", "dir", "directories", "folder", "folders", "ordner"
     }
 
     if first in known_commands:
@@ -512,7 +530,8 @@ def is_agent_cli_command(argv: List[str]) -> bool:
         "-sync", "--sync", "-guide", "--guide", "--json", "-json",
         "-help", "--help", "-h",
         "-open", "--open", "-courses", "--courses", "-course", "--course",
-        "-books", "--books", "-book", "--book"
+        "-books", "--books", "-book", "--book",
+        "-dirs", "--dirs", "-dir", "--dir", "-folder", "--folder"
     ]
     return any(first.startswith(p) for p in flag_prefixes)
 
@@ -956,6 +975,12 @@ def run_agent_cli(argv: List[str]) -> int:
     if command in ["books", "book", "schulbuch", "schulbücher"]:
         return handle_books_command(sub_args)
 
+    # ─────────────────────────────────────────────────────────────────
+    # 11. DIRECTORIES (Local Folders)
+    # ─────────────────────────────────────────────────────────────────
+    if command in ["dirs", "dir", "directories", "folder", "folders", "ordner"]:
+        return handle_dirs_command(sub_args)
+
     # Unbekannter Befehl
     print(f"Unknown command: '{command}'. Use 'tasks guide' or 'tasks --help' for available commands.")
     return 1
@@ -1214,3 +1239,126 @@ def handle_books_command(sub_args: List[str]) -> int:
             return 1
 
     return 0
+
+
+def handle_dirs_command(sub_args: List[str]) -> int:
+    """Manages and opens linked directories via CLI."""
+    parser = argparse.ArgumentParser(prog="tasks dirs", add_help=False)
+    parser.add_argument("action", nargs="?", default="list", help="list, open, add, remove")
+    parser.add_argument("target", nargs="?", default="", help="Directory title, ID, index, or folder path")
+    parser.add_argument("--title", "-t", default="", help="Title for the directory (optional)")
+    parser.add_argument("--json", action="store_true", help="JSON output")
+    args, remaining = parser.parse_known_args(sub_args)
+
+    try:
+        from directory_service import DirectoryService
+    except ImportError:
+        from src.services.directory_service import DirectoryService
+
+    action = (args.action or "list").lower()
+    target = args.target or (remaining[0] if remaining else "")
+
+    if action not in ["list", "ls", "open", "add", "remove", "rm", "delete"]:
+        target = args.action
+        action = "open"
+
+    dirs = DirectoryService.load_directories()
+
+    if action in ["list", "ls"]:
+        if args.json:
+            print(json.dumps({"directories": dirs, "count": len(dirs)}, ensure_ascii=False, indent=2))
+        else:
+            if not dirs:
+                print("No directories linked. Link one with: tasks dirs add <path>")
+            else:
+                print(f"=== Linked Directories ({len(dirs)} linked) ===")
+                for idx, d in enumerate(dirs, 1):
+                    print(f"[{idx}] 📁 {d.get('title')}")
+                    print(f"    Path: {d.get('path')}")
+        return 0
+
+    if action == "open":
+        if not target:
+            msg = "Error: Please specify a directory title, ID, or index. Example: 'tasks dirs open 1'"
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        selected_dir = None
+        if target.isdigit():
+            idx = int(target) - 1
+            if 0 <= idx < len(dirs):
+                selected_dir = dirs[idx]
+
+        if not selected_dir:
+            selected_dir = DirectoryService.find_directory(target)
+
+        if not selected_dir:
+            msg = f"Error: Directory '{target}' not found."
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        ok, msg = DirectoryService.open_directory(selected_dir)
+        if args.json:
+            print(json.dumps({"success": ok, "message": msg, "directory": selected_dir}, ensure_ascii=False))
+        else:
+            print(f"{'✓' if ok else 'Error:'} {msg}")
+        return 0 if ok else 1
+
+    if action == "add":
+        if not target:
+            msg = "Error: Please provide a folder path. Example: 'tasks dirs add C:\\path\\to\\BET'"
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        clean_path = target.strip().strip('"').strip("'")
+        if not os.path.exists(clean_path):
+            msg = f"Error: Directory path does not exist on disk: '{clean_path}'"
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        entry = DirectoryService.add_directory(clean_path, title=args.title)
+        if args.json:
+            print(json.dumps({"success": True, "directory": entry}, ensure_ascii=False))
+        else:
+            print(f"✓ Linked directory '{entry.get('title')}' -> {entry.get('path')}")
+        return 0
+
+    if action in ["remove", "rm", "delete"]:
+        if not target:
+            msg = "Error: Please specify a directory title, ID, or index to remove."
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            return 1
+
+        target_id = target
+        if target.isdigit():
+            idx = int(target) - 1
+            if 0 <= idx < len(dirs):
+                target_id = dirs[idx].get("id", target)
+
+        ok = DirectoryService.remove_directory(target_id)
+        if args.json:
+            print(json.dumps({"success": ok, "removed": target_id}, ensure_ascii=False))
+        else:
+            if ok:
+                print(f"✓ Removed directory link '{target}'")
+            else:
+                print(f"Notice: Directory '{target}' was not found in linked list.")
+        return 0 if ok else 1
+
+    print(f"Unknown action: '{action}'. Available: list, open, add, remove")
+    return 1

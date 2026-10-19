@@ -18,7 +18,7 @@ WORKSPACE_DIR = os.path.dirname(SRC_DIR)
 USERPROFILE = os.environ.get("USERPROFILE") or os.path.expanduser("~")
 
 # Anwendungs-Version & GitHub Repository
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 GITHUB_REPO = "X4nd109/Aufgaben-Detector"
 
 
@@ -247,6 +247,8 @@ CUSTOM_EXAMS_FILE = os.path.join(DATA_DIR, "custom_exams.json")
 APP_CUSTOM_EXAMS_FILE = os.path.join(CONFIG_DIR, "aufgaben_detector_custom_exams.json")
 SCHOOLBOOKS_FILE = os.path.join(DATA_DIR, "schoolbooks.json")
 APP_SCHOOLBOOKS_FILE = os.path.join(CONFIG_DIR, "aufgaben_detector_schoolbooks.json")
+DIRECTORIES_FILE = os.path.join(DATA_DIR, "directories.json")
+APP_DIRECTORIES_FILE = os.path.join(CONFIG_DIR, "aufgaben_detector_directories.json")
 MOODLE_COOKIE_FILE = os.path.join(CONFIG_DIR, "moodle_session_cookies.json")
 TEAMS_PROFILE_DIR = os.path.join(CONFIG_DIR, "teams_browser_profile")
 os.makedirs(TEAMS_PROFILE_DIR, exist_ok=True)
@@ -471,6 +473,8 @@ ALLOWED_THEMES = [
     "atom-one-light",
     # Minimal & Earth Tones
     "flexoki",
+    # True Black OLED with Flexoki Accents
+    "oled",
     # Textual Standard Themes
     "textual-dark",
     "textual-light",

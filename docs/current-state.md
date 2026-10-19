@@ -1,7 +1,7 @@
 # Current Project State & Session Handoff — Aufgaben-Detector
 
 > **Last Updated**: 2026-10-19  
-> **Active Milestone**: Milestone 3 — Open Source Release & GitHub Actions CI/CD (v1.0.3)
+> **Active Milestone**: Milestone 3 — Open Source Release & GitHub Actions CI/CD (v1.0.4)
 
 ---
 
@@ -41,6 +41,43 @@
   - Added `-c core.askPass=` and `SSH_ASKPASS` to `_run_git_cmd` to strictly prevent external GUI/credential prompts from blocking background execution.
   - Hardened TUI `GitSetupModal` background worker with robust error recovery so UI status and connect buttons never freeze.
   - Handled clean repo-switching and empty remote branches without redundant failed fetch calls.
+
+- [x] **Verzeichnis-Schnellzugriff & CommandPalette UX Fixes (v1.0.4)**:
+  - Unified `Backspace` CommandPalette mit 3-Wege `Tab`-Umschaltung: **Courses** (Cyan) ➔ **Schoolbooks** (Rot) ➔ **Directories** (Grün).
+  - Zentrierter Header-Schriftzug `[bold green]Directories[/bold green]` und dynamischer Such-Placeholder (`Search directories (/link, /unlink)...`).
+  - **Suchtext-Erhalt bei Moduswechsel**: Eingegebener Text in der Suchleiste bleibt beim Wechseln mit `Tab` erhalten und filtert sofort im neuen Tab.
+  - **Backspace-to-Close**: Wenn die Suchleiste leer ist, schließt ein Druck auf `Backspace` die Suchleiste sofort (`UnifiedCommandInput`).
+  - Direkte Ordnerverknüpfung via `/link` über den nativen Windows-Ordnerauswahldialog (`FolderBrowserDialog` / `askdirectory`) mit automatischer Titelableitung vom Ordnernamen (z. B. `BET`).
+  - 1-Klick / `Enter` zum Öffnen des verknüpften Ordners direkt im Windows Explorer (`os.startfile`).
+  - Schnelles Löschen verknüpfter Ordner über `/unlink` oder `/delete`.
+  - Lokale Persistenz in `data/directories.json` (automatisch von Git-Tracking ausgeschlossen via `.gitignore`).
+  - Vollständige Headless CLI-Integration via `tasks dirs [list|open|add|remove] [--json]`.
+  - **OLED Theme & UI Polish (22 Themes)**:
+    - Neues `oled` Theme mit purem Schwarz (`#000000` Background/Surface/Panel) kombiniert mit Flexoki-Farbakzenten.
+    - **Header & Bar Clipping behoben**: Borders von `Header`, `#info_bar` und `#button_bar` entfernt, damit Widgets und Buttons vertikal nicht mehr abgeschnitten werden.
+    - **Button-Höhe wiederhergestellt**: Durch `height: 3;` in `.-theme-oled Button` besitzen Buttons in allen Menüs und Modals (`SettingsModal`, `ThemeSelectModal`, etc.) wieder die gewohnte 3-Zeilen-Höhe mit voller Lesbarkeit und zentrierter Schrift statt auf 1 Zeile zusammenzufallen.
+    - **Weiße Spalten-Header**: Tabellen-Header (`DataTable > .datatable--header`) von Orange auf klares Weiß (`#ffffff`, bold) umgestellt.
+    - **Tabellen-Fokus bleibt tiefschwarz**: Wenn mit `Tab` durch die Menüs (Main `#tasks_table`, Tests `#exams_table`, Absenzen `#abs_subject_table`/`#abs_detail_table`) navigiert wird, bleibt der Hintergrund rein schwarz (`background: #000000; background-tint: transparent;`) statt durch Textuals Default-Fokus-Tint grau aufzuleuchten.
+    - **Theme-Menü Hover-State**: Beim Hovern über Themes in `ThemeSelectModal` wird der Hintergrund in dezentem Hellgrau (`#343331`) hervorgehoben.
+  - 19 automatisierte Tests für Verzeichnisse und OLED-Theme-Styling.
+
+- [x] **Windows-Tastatur-Shortcuts für alle Texteingabefelder (v1.0.5)**:
+  - Projektweite Bereitstellung (`configure_enhanced_text_inputs`) für alle `Input`-Widgets (CommandPalette, Suchleisten, Formulare, Logins, Schulkonfiguration) und mehrzeilige `TextArea`-Notizen.
+  - **STRG + A**: Markiert den gesamten Inhalt des Textfeldes (ersetzt Textuals Default `home`).
+  - **Pos1 (`Home`) & Ende (`End`)**: Springt direkt an Zeilenanfang bzw. Zeilenende.
+  - **SHIFT + Pos1 & SHIFT + Ende**: Markiert vom Cursor bis zum Zeilenanfang bzw. Zeilenende.
+  - **STRG + ← & STRG + →**: Wortweises Springen des Cursors.
+  - **SHIFT + STRG + ← & SHIFT + STRG + →**: Wortweises Markieren des Textes (`ctrl+shift+left` und `shift+ctrl+left`).
+  - **STRG + Backspace & STRG + Entf**: Wortweises Löschen nach links bzw. rechts.
+  - **STRG + Backspace 5-Stufen-Absicherungsarchitektur**:
+    - **Stufe 1 (Win32 Driver Patch)**: `patch_win32_event_monitor` fängt ConPTY/Windows-Terminal KeyEvents (`VK_BACK` / `\x08` / `\x7f` mit `dwControlKeyState & 0x000C`) ab und reicht `\x1b[127;5u` an `XTermParser` weiter, ohne synthetisierte Events mit `wVirtualKeyCode == 0` fälschlicherweise zu droppen.
+    - **Stufe 2 (Hardware-Hook `is_ctrl_pressed_win32`)**: Direkte OS-Tastaturabfrage (`GetAsyncKeyState(0x11)`). `Input._on_key` und `TextArea._on_key` fangen jedes `backspace`-Event bei gehaltenem STRG unmittelbar ab, verhindern Default-Bubbling (`stop()`, `prevent_default()`) und löschen das linke Wort.
+    - **Stufe 3 (CommandPalette Guard)**: `UnifiedCommandInput.action_delete_left` prüft auf gehaltenes STRG und leitet an `action_delete_left_word` weiter, wodurch die Palette bei STRG+Backspace niemals versehentlich geschlossen wird.
+    - **Stufe 4 (App-Level Menü Guard)**: `action_open_courses_palette` blockiert das Öffnen des Menüs, wenn STRG gehalten wird.
+    - **Stufe 5 (Fallback Bindings)**: Native Bindings für `ctrl+backspace`, `ctrl+w` und `ctrl+h` für maximale Terminal-Kompatibilität.
+  - **Eingabe/Backspace bei Markierung**: Ersetzt oder löscht den markierten Bereich nahtlos wie unter Windows gewohnt.
+  - **CommandPalette Backspace-Schutz**: Bei mit `STRG+A` markiertem Text leert `Backspace` zunächst nur die Eingabe; erst bei leerem Feld schließt der nächste Druck die Palette.
+  - 6 automatisierte Unit-Tests in `tests/test_tui_app.py` (insgesamt 230 Tests).
 
 - [x] **Schulbuch-Schnellzugriff (Schoolbooks Quick-Open)**:
   - Unified `Backspace` CommandPalette switching between **Kurse** (Türkis/Cyan) and **Schulbücher** (Rot) via `Tabulator`.
