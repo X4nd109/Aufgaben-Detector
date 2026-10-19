@@ -172,15 +172,30 @@
 
 ## 4. Session Handoff Notes (Context for Next Agent)
 
-- **Recent Achievements (2026-10-19)**:
+- **Recent Achievements (2026-10-19 — v1.0.4 Release)**:
+  - **Verzeichnis-Schnellzugriff (Directories Tab & CLI)**:
+    - Neuer 3. Tab **Directories** in der `UnifiedCommandPalette` (`Backspace` ➔ `Tab` Zyklus: Courses ➔ Schoolbooks ➔ Directories).
+    - Direkte lokale Ordnerverknüpfung via `/link` mit Windows-Ordnerauswahldialog (`askdirectory` / PowerShell `FolderBrowserDialog`), Titel-Ableitung und 1-Klick Öffnen im Windows Explorer (`os.startfile`).
+    - Neue Headless CLI `tasks dirs [list|open|add|remove] [--json]`.
+    - Persistenz in `data/directories.json` (automatisch von Git-Tracking ausgeschlossen via `.gitignore`).
+  - **OLED Theme & UI Polish**:
+    - Reines Tiefschwarz (`#000000`) kombiniert mit Flexoki-Farbakzenten.
+    - Header & Button-Bar Borders bereinigt, um vertikales Clipping zu eliminieren.
+    - Button-Höhe in Dialogen und Modals auf 3 Zeilen mit voller Textzentrierung normiert.
+    - Tabellen-Header auf Weiß (`#ffffff`) gesetzt; Tabellen-Fokus bleibt tiefschwarz ohne störenden Grauschleier.
+  - **Windows-Tastatur-Shortcuts & 5-Stufen-Absicherung für STRG+Backspace**:
+    - Alle Eingabefelder (`Input`, `TextArea`, `UnifiedCommandInput`) mit Pos1, Ende, STRG+A, STRG+Pfeilen, SHIFT+STRG+Pfeilen und STRG+Entf/Backspace ausgerüstet.
+    - **5-Stufen-Architektur** gegen Terminal-Modifier-Verlust: Win32-Treiber-Patch, hardwarenahe OS-Abfrage (`GetAsyncKeyState(VK_CONTROL)` `0x11`), Widget-Hooks in `_on_key`, Palette-Guard in `UnifiedCommandInput.action_delete_left` und Menü-Guard in `action_open_courses_palette`.
+    - Vollständige Testabdeckung mit 230 Tests (100% Erfolgsquote).
+    - Veröffentlichung von Release-Tag **[v1.0.4](https://github.com/X4nd109/Aufgaben-Detector/releases/tag/v1.0.4)** mit automatisierter CI/CD-Installer-Generierung.
+- **Previous Achievements (2026-10-19 — v1.0.3)**:
   - **Version Badge & Asynchronous GitHub Release Update Notification (v1.0.3)**:
     - Centralized application version (`APP_VERSION = "1.0.3"`) and GitHub repo in `src/core/config.py`.
-    - Placed prominent white bold version badge (`v1.0.3`) in the top-right corner of `SettingsModal` (`[O]`).
+    - Placed prominent white bold version badge in the top-right corner of `SettingsModal` (`[O]`).
     - Implemented `src/services/update_service.py` with zero-login GitHub REST API release checker and semver tuple comparator.
     - Designed `UpdateReminderModal` appearing in screen center upon app startup when a newer release exists, with 1-click browser download (`Enter`) and dismiss (`ESC`).
     - Executed check in background daemon thread preserving `< 0.1s` offline app launch.
-    - Created automated test suite with 9 unit/UI tests in `tests/test_update_service.py` (total 206 tests passing with 100% success rate).
-    - Released official GitHub version tag **[v1.0.3](https://github.com/X4nd109/Aufgaben-Detector/releases/tag/v1.0.3)** and triggered automated CI/CD installer build.
+    - Created automated test suite with 9 unit/UI tests in `tests/test_update_service.py`.
 - **Previous Achievements (2026-10-18)**:
   - **Digi4School Grabber Sync & Ultra-HD Resolution Standard**:
     - Ported all enhancements from standalone `Digi4School_Book_Grabber` into `src/services/digi4school_service.py`.
