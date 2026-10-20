@@ -56,6 +56,9 @@
 | `Render Quality` | `digi_select_quality` | Wählt die Renderqualität im Digi4School-Download-Dialog (Ultra-HD 4.0x, High-Res 3.0x, Standard 2.0x). |
 | `Start Download` | `btn_start_digi_download` | Prüft Tesseract OCR und startet den automatisierten Digi4School Buchdownload. |
 | `Show in Downloads folder` | `btn_open_folder_d4s` | Öffnet den Downloads-Ordner nach erfolgreichem Buchdownload direkt im Windows Explorer. |
+| `Install Update Now` | `btn_update_install` | Startet den automatischen In-App-Download des Installers und die Aktualisierung im Hintergrund. |
+| `View in Browser` | `btn_update_open` | Öffnet die GitHub-Release-Seite der neuen Version im Standard-Webbrowser. |
+| `Later [ESC]` | `btn_update_dismiss` | Schließt das Update-Erinnerungsmodal ohne Aktualisierung (ESC-Taste oder Mausklick). |
 
 ---
 
