@@ -2236,6 +2236,63 @@ class TestAufgabenDetectorTUI(unittest.IsolatedAsyncioTestCase):
             app.action_open_courses_palette()
             app.push_screen.assert_called_once()
 
+    async def test_tasks_table_column_widths_teacher_and_due_date_priority(self):
+        """Prüft, dass Teacher (>= 8) und Due Date (>= 28) priorisiert werden und 'Teacher' nie abgeschnitten wird."""
+        app = AufgabenDetectorApp(self.mgr)
+        async with app.run_test(size=(120, 35)) as pilot:
+            dt = app.query_one(DataTable)
+            cols = list(dt.columns.values())
+            self.assertEqual(len(cols), 7)
+            # cols: # (0), Platform (1), Subject (2), Assignment (3), Due Date (4), Status (5), Teacher (6)
+            w_idx = cols[0].width
+            w_plat = cols[1].width
+            w_subj = cols[2].width
+            w_assign = cols[3].width
+            w_due = cols[4].width
+            w_stat = cols[5].width
+            w_teach = cols[6].width
+
+            self.assertGreaterEqual(w_teach, 8, "Teacher-Spalte muss mindestens 8 breit sein, damit 'Teacher' nicht zu 'Teache' wird")
+            self.assertGreaterEqual(w_due, 28, "Due Date-Spalte muss mindestens 28 breit sein für vollständige Datumsangaben")
+            self.assertEqual(w_stat, 11)
+            self.assertGreater(w_assign, 10, "Assignment erhält den verbleibenden Rest")
+
+            # Breiter Bildschirm (150 Spalten)
+            app.refresh_table(term_w_override=150)
+            await pilot.pause()
+            cols_wide = list(dt.columns.values())
+            self.assertGreaterEqual(cols_wide[6].width, 8)
+            self.assertGreaterEqual(cols_wide[4].width, 28)
+            self.assertGreater(cols_wide[3].width, w_assign, "Assignment expandiert auf breiten Bildschirmen")
+
+            # Extrem kleines Fenster (74 Spalten)
+            app.refresh_table(term_w_override=74)
+            await pilot.pause()
+            cols_tiny = list(dt.columns.values())
+            self.assertGreaterEqual(cols_tiny[6].width, 7, "Teacher darf selbst bei extrem kleinem Fenster min. 7 Zeichen für den Header haben")
+
+    async def test_info_bar_single_line_and_sync_spinner_zero_shift(self):
+        """Prüft, dass info_bar genau 1 Zeile hoch ist und SyncSpinner im Ruhezustand und bei Aktivität exakt dieselbe Breite belegt."""
+        app = AufgabenDetectorApp(self.mgr)
+        async with app.run_test(size=(120, 35)) as pilot:
+            spinner = app.query_one("#sync_spinner", SyncSpinner)
+            self.assertEqual(spinner.styles.width.value, 3)
+
+            # Inaktiver Zustand: leer, belegt aber durch CSS width: 3 exakt denselben Platz
+            self.assertFalse(spinner.active)
+            self.assertEqual(str(spinner.render()), "")
+
+            # Aktiver Zustand: Frame wird gerendert
+            spinner.active = True
+            await pilot.pause()
+            rendered = str(spinner.render())
+            self.assertIn(spinner.FRAMES[spinner.frame_idx], rendered)
+
+            # Leere Zeile zwischen info_bar und tasks_table
+            info_bar = app.query_one("#info_bar")
+            table = app.query_one("#tasks_table")
+            self.assertEqual(table.region.y - (info_bar.region.y + info_bar.region.height), 1, "Es muss genau 1 leere Zeile zwischen info_bar und der Tabelle liegen")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6306,11 +6306,11 @@ class SyncSpinner(Widget):
 
     DEFAULT_CSS = """
     SyncSpinner {
-        width: 4;
+        width: 3;
         height: 1;
         content-align: right middle;
         text-align: right;
-        display: none;
+        display: block;
     }
     SyncSpinner.-active {
         display: block;
@@ -6335,7 +6335,7 @@ class SyncSpinner(Widget):
         else:
             if self._timer is not None:
                 self._timer.pause()
-            self.refresh()
+        self.refresh()
 
     def _advance_frame(self) -> None:
         if self.active:
@@ -6345,7 +6345,7 @@ class SyncSpinner(Widget):
         if not self.active:
             return ""
         frame = self.FRAMES[self.frame_idx]
-        return Text.from_markup(f"[bold #a6e3a1]{frame}[/] ")
+        return Text.from_markup(f"[bold #a6e3a1]{frame}[/]")
 
     def on_unmount(self) -> None:
         if self._timer is not None:
@@ -6364,14 +6364,19 @@ class AufgabenDetectorApp(App):
     CSS = """
     #info_bar {
         dock: top;
-        height: 3;
+        height: 1;
+        margin-bottom: 1;
         padding: 0 1;
-        align: center middle;
+        align: left middle;
+        overflow-x: hidden;
+        overflow-y: hidden;
     }
 
     #info_stats {
         width: 1fr;
+        height: 1;
         text-style: bold;
+        overflow-x: hidden;
     }
 
     #tasks_table {
@@ -6733,6 +6738,7 @@ class AufgabenDetectorApp(App):
             return
         try:
             self.refresh(layout=True)
+            self.refresh_table()
         except Exception:
             pass
 
@@ -6781,21 +6787,48 @@ class AufgabenDetectorApp(App):
             w_idx = 2
             w_plat = 8
             w_subj = 4
-            w_due = max(12, int(avail_content * 0.22))
             w_stat = 8
-            w_teach = 4
-            fixed = w_idx + w_plat + w_subj + w_due + w_stat + w_teach
-            w_assign = max(5, avail_content - fixed)
+            w_teach = 7  # Garantiert min. 7 Zeichen, damit "Teacher" niemals zu "Teache" gekürzt wird
+            # In schmalen Fenstern Assignment mindestens 21 geben, damit Aufgabentitel lesbar bleiben
+            w_assign = min(22, max(21, int(avail_content * 0.35)))
+            w_due = max(9, avail_content - (w_idx + w_plat + w_subj + w_stat + w_teach + w_assign))
+            w_assign = avail_content - (w_idx + w_plat + w_subj + w_due + w_stat + w_teach)
             col_widths = [w_idx, w_plat, w_subj, w_assign, w_due, w_stat, w_teach]
         else:
-            base_widths = [3, 9, 8, 20, 20, 10, 6]
-            extra = max(0, avail_content - sum(base_widths))
-            w_subj = 8 + int(extra * 0.10)
-            w_due = 20 + int(extra * 0.12)
-            w_teach = 6 + int(extra * 0.05)
-            assigned = (w_subj - 8) + (w_due - 20) + (w_teach - 6)
-            w_assign = 20 + (extra - assigned)
-            col_widths = [3, 9, w_subj, w_assign, w_due, 10, w_teach]
+            # Priorisierte Spaltenverteilung:
+            # - Teacher: min. 8 (oder 7 bei extrem kleinen Fenstern), Header "Teacher" und Kürzel voll sichtbar
+            # - Due Date: min. 28 (bis zu 32 bei breiten Bildschirmen), vollständiges Datum ohne "..."
+            # - Status: 11 ("✓ Completed")
+            # - Subject: 8 (bis zu 10)
+            # - Platform: 9 ("🟧 Moodle")
+            # - #: 3
+            # - Assignment: nimmt den gesamten restlichen Raum ein (wird zuerst gekürzt)
+            w_idx = 3
+            w_plat = 9
+            w_subj = 8
+            w_due = 28
+            w_stat = 11
+            w_teach = 8
+            fixed_sum = w_idx + w_plat + w_subj + w_due + w_stat + w_teach  # 67
+
+            if avail_content >= fixed_sum + 20:
+                extra = avail_content - (fixed_sum + 20)
+                add_due = min(4, int(extra * 0.15))
+                add_teach = min(2, int(extra * 0.05))
+                add_subj = min(2, int(extra * 0.05))
+                w_due += add_due
+                w_teach += add_teach
+                w_subj += add_subj
+                w_assign = avail_content - (w_idx + w_plat + w_subj + w_due + w_stat + w_teach)
+            else:
+                # Leicht verkleinertes Fenster (76 bis 86 Spalten):
+                # Halte Assignment auf min. 21, w_teach auf 8, Rest für w_due
+                w_subj = 7
+                w_assign = max(21, avail_content - (w_idx + w_plat + w_subj + 20 + w_stat + w_teach))
+                w_due = max(16, avail_content - (w_idx + w_plat + w_subj + w_stat + w_teach + w_assign))
+                w_assign = avail_content - (w_idx + w_plat + w_subj + w_due + w_stat + w_teach)
+
+            col_widths = [w_idx, w_plat, w_subj, w_assign, w_due, w_stat, w_teach]
 
         # Spaltenbreiten der DataTable fest zuweisen, um den Leerraum rechts vollständig zu schließen
         if dt.columns:
@@ -6947,9 +6980,26 @@ class AufgabenDetectorApp(App):
                 next_date_short = f"{_ndt.day:02d}.{_ndt.month:02d}."
             except Exception:
                 next_date_short = next_exam.date_display
-            exam_badge = f"  |  📝 Next: [bold dodger_blue1]{next_date_short} {next_exam.subject}[/bold dodger_blue1] [bold green]{next_exam.countdown_display}[/bold green]"
+            exam_badge = f"📝 Next: [bold dodger_blue1]{next_date_short} {next_exam.subject}[/bold dodger_blue1] [bold green]{next_exam.countdown_display}[/bold green]"
 
-        stats_text = f"{todo_badge}  |  🎓 Moodle: {moodle_cnt}  |  👥 Teams: {teams_cnt}  |  ✏️ Manual: {manual_cnt}{exam_badge}  |  🕒 Sync: {sync_time_str}"
+        # Kompakte vs. vollständige Badges je nach Terminalbreite
+        # Schmale Fenster (< 118 Spalten oder wenn Next Exam vorhanden ist und Platz eng wird):
+        # 0-Zähler ausblenden und kompakten Trenner nutzen, um vertikalen Zeilenumbruch strictly zu verhindern.
+        parts = [todo_badge]
+        if term_w >= 118 or moodle_cnt > 0:
+            parts.append(f"🎓 Moodle: {moodle_cnt}")
+        if term_w >= 118 or teams_cnt > 0:
+            parts.append(f"👥 Teams: {teams_cnt}")
+        if term_w >= 118 or manual_cnt > 0:
+            parts.append(f"✏️ Manual: {manual_cnt}")
+
+        if exam_badge:
+            parts.append(exam_badge)
+
+        parts.append(f"🕒 Sync: {sync_time_str}")
+
+        sep = "  |  " if term_w >= 122 and not (next_exam and term_w < 135) else " | "
+        stats_text = sep.join(parts)
         self.query_one("#info_stats", Label).update(stats_text)
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:

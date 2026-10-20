@@ -17,9 +17,9 @@ from tui_app import SettingsModal, UpdateReminderModal, AufgabenDetectorApp
 class TestUpdateService(unittest.TestCase):
     def test_get_app_version(self):
         """Prüft die zentrale Versionskonfiguration."""
-        self.assertEqual(APP_VERSION, "1.0.7")
-        self.assertEqual(get_app_version(prefix=True), "v1.0.7")
-        self.assertEqual(get_app_version(prefix=False), "1.0.7")
+        self.assertEqual(APP_VERSION, "1.0.8")
+        self.assertEqual(get_app_version(prefix=True), "v1.0.8")
+        self.assertEqual(get_app_version(prefix=False), "1.0.8")
 
     def test_parse_version(self):
         """Prüft das Parsen diverser Versions-Strings in Zahlentupel."""

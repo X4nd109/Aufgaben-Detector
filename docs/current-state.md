@@ -1,7 +1,7 @@
 # Current Project State & Session Handoff — Aufgaben-Detector
 
 > **Last Updated**: 2026-10-20  
-> **Active Milestone**: Milestone 3 — In-App Auto-Update & High-DPI UI Polish (v1.0.7)
+> **Active Milestone**: Milestone 3 — In-App Auto-Update & High-DPI UI Polish (v1.0.8)
 
 ---
 
@@ -123,6 +123,18 @@
   - Maskierung der `\[ESC]`-Klammern, damit Textuals Content/Rich-Markup-Parser die Tastenkombination nicht verschluckt.
   - Neuer Test `test_update_reminder_modal_layout_and_english_texts` in `tests/test_update_service.py` (insgesamt 250 Tests in der Gesamtsuite mit 100 % Erfolgsquote).
 
+- [x] **Main Task Dashboard Formatierung, Sync-Uhrzeit & Spaltenpriorisierung (v1.0.9 Polish)**:
+  - **Kein Zeilenumbruch der Sync-Uhrzeit**: `#info_bar` und `#info_stats` auf feste `height: 1` gesperrt mit `overflow-y: hidden`, `overflow-x: hidden` und `margin-bottom: 1;`, wodurch die gewohnte leere Trennzeile zwischen Info-Leiste und Aufgaben-Tabelle erhalten bleibt.
+  - **Zero-Layout-Shift Sync-Spinner**: `SyncSpinner` besitzt nun eine permanent feste Boxbreite (`width: 3; height: 1; display: block;`). Das Starten und Stoppen des Hintergrund-Syncs verändert die verfügbare Breite um 0 Zeichen, wodurch das Springen der Uhrzeit (`19:09:06`) in eine zweite Zeile vollständig eliminiert wurde.
+  - **Dynamisches Badge-Kompaktieren**: Bei schmaleren Terminalbreiten (< 118 Spalten) oder langen Prüfungs-Badges werden 0-Zähler (`Teams: 0`, `Manual: 0`) automatisch ausgeblendet und Trennzeichen gestrafft, damit die Sync-Anzeige niemals abgeschnitten wird.
+  - **Header-Truncation "Teacher" behoben**: Spalte 6 (`Teacher`) von Basisbreite 6 auf min. 8 (bzw. 7 bei extrem schmalen Fenstern) erhöht, sodass der Header `"Teacher"` niemals zu `"Teache"` abgeschnitten wird und Lehrerkürzel voll lesbar bleiben.
+  - **Priorisierte Spaltenbreitenverteilung**:
+    - Spalte *Due Date* erhält garantierte 28–32 Zeichen für vollständige Datumsangaben (z. B. `Montag, 2. November, 23:59`) ohne unschöne `...`-Kürzungen.
+    - Spalte *Teacher* erhält min. 8 Zeichen für Header und Lehrerkürzel.
+    - Spalte *Assignment* nimmt den gesamten flexiblen Rest ein (`avail_content - sum(others)`) und wird bei Verkleinerung des Fensters als erste Spalte gekürzt.
+  - **4K/1440p Startup Viewport-Kalibrierung**: In `_sync_initial_viewport` wird `refresh_table()` nach dem initialen UI-Mount erneut aufgerufen, sodass die exakten gemessenen Fensterdimensionen auf hochauflösenden Displays sofort greifen.
+  - 2 neue automatisierte Tests in `tests/test_tui_app.py` (insgesamt 252 Tests in der Gesamtsuite mit 100 % Erfolgsquote).
+
 ---
 
 ## 2. In Progress / Immediate Next Steps
@@ -138,17 +150,21 @@
 
 ## 3. Known Issues & Blockers
 
-- *None active* (All 250 test suite tests passing cleanly with 100% pass rate).
+- *None active* (All 252 test suite tests passing cleanly with 100% pass rate).
 
 ---
 
 ## 4. Session Handoff Notes (Context for Next Agent)
 
-- **Recent Achievements (2026-10-20 — UpdateReminderModal English Localization & 2-Row Button Layout)**:
+- **Recent Achievements (2026-10-20 — Main Task Dashboard Formatting & Priority Fixes v1.0.9 Polish)**:
+  - Kein Zeilenumbruch der Sync-Uhrzeit mehr: `#info_bar` auf `height: 1` gesperrt, `SyncSpinner` mit fester Boxbreite (`width: 3`) für Null-Layout-Shift.
+  - "Teacher"-Header Truncation ("Teache") durch Anhebung der Spaltenbreite auf min. 8 (bzw. 7) vollständig behoben.
+  - Spaltenpriorisierung implementiert: Due Date (28–32 Chars) und Teacher voll erhalten, Assignment flexibel und absorbiert Größenänderungen.
+  - 4K / 1440p Startup Viewport-Kalibrierung via `_sync_initial_viewport`.
+  - 252 Tests in der Gesamtsuite mit 100 % Erfolgsquote.
+- **Previous Achievements (2026-10-20 — UpdateReminderModal English Localization & 2-Row Button Layout)**:
   - Vollständige Lokalisierung aller Texte im UpdateReminderModal auf Englisch.
   - 2-Zeilen-Button-Layout verhindert Abschneiden von Buttons.
-  - Multi-Line-Wrapping für den Hinweistext via `width: 100%`.
-  - 250 Tests in der Gesamtsuite mit 100 % Erfolgsquote.
 - **Previous Achievements (2026-10-20 — v1.0.7 In-App Auto-Update Feature)**:
   - 1-Click Auto-Update Flow (`UpdateReminderModal`) mit Chunk-Download, Fortschrittsanzeige und geräuschlosem Inno Setup Handoff.
 - **Entry Points**:
