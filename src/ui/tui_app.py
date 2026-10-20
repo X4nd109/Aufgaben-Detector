@@ -3758,7 +3758,9 @@ def format_status_english(task: Task) -> str:
         return "Overdue"
     dt = (task.status_display or "").lower()
     st = (task.status or "").lower()
-    if any(kw in dt for kw in ["abgegeben", "erledigt", "completed", "done", "submitted", "bewertet", "zur bewertung", "zurückgegeben", "zurueckgegeben", "returned"]):
+    if any(neg in dt for neg in ["keine", "nicht", "noch nicht", "unvollständig"]):
+        pass
+    elif any(kw in dt for kw in ["abgegeben", "erledigt", "completed", "done", "submitted", "bewertet", "zur bewertung", "zurückgegeben", "zurueckgegeben", "returned"]):
         return "Completed"
     if any(kw in dt for kw in ["überfällig", "ueberfaellig", "overdue", "verspätet", "late"]) or any(kw in st for kw in ["überfällig", "ueberfaellig", "overdue"]):
         return "Overdue"
@@ -6717,10 +6719,11 @@ class AufgabenDetectorApp(App):
 
     def on_resize(self, event: Resize) -> None:
         """Passt Spaltenbreiten bei echten Terminalgrößenänderungen dynamisch an."""
-        if self.is_mounted and hasattr(self, "current_tasks") and self.current_tasks:
-            self.refresh_table()
+        if self.is_mounted and hasattr(self, "current_tasks"):
+            override_w = (event.size.width - 2) if (event.size and event.size.width > 0) else None
+            self.refresh_table(term_w_override=override_w)
 
-    def refresh_table(self) -> None:
+    def refresh_table(self, term_w_override: Optional[int] = None) -> None:
         """Aktualisiert die Aufgaben-Tabelle und die Statusleiste."""
         try:
             dt = self.query_one(DataTable)
@@ -6741,10 +6744,50 @@ class AufgabenDetectorApp(App):
             timeframe_filter=self.timeframe_filter,
         )
 
-        # Dynamische Breitenberechnung: Verhindert störendes horizontales Scrollen
-        term_w = self.size.width if (self.size and self.size.width > 0) else 136
-        max_title_len = max(23, term_w - 94)  # 12 Spalten dünner (zuvor term_w - 82, min 35)
-        max_course_len = 22
+        # Dynamische Breitenberechnung: Verteilt alle 7 Spalten proportional über die gesamte Breite,
+        # sodass rechts kein Platz frei bleibt und Assignment maximalen Raum erhält, ohne horizontal zu scrollen.
+        if term_w_override is not None and term_w_override > 0:
+            term_w = term_w_override
+        else:
+            try:
+                term_w = dt.size.width if (dt.size and dt.size.width > 0) else (self.size.width - 2 if self.size and self.size.width > 0 else 121)
+            except Exception:
+                term_w = self.size.width - 2 if (self.size and self.size.width > 0) else 121
+
+        avail_w = max(70, term_w - 1)  # 1 Spalte Puffer für vertikale Scrollbar
+        total_padding = 7 * (2 * dt.cell_padding)
+        avail_content = max(35, avail_w - total_padding)
+
+        if avail_content < 76:
+            w_idx = 2
+            w_plat = 8
+            w_subj = 4
+            w_due = max(12, int(avail_content * 0.22))
+            w_stat = 8
+            w_teach = 4
+            fixed = w_idx + w_plat + w_subj + w_due + w_stat + w_teach
+            w_assign = max(5, avail_content - fixed)
+            col_widths = [w_idx, w_plat, w_subj, w_assign, w_due, w_stat, w_teach]
+        else:
+            base_widths = [3, 9, 8, 20, 20, 10, 6]
+            extra = max(0, avail_content - sum(base_widths))
+            w_subj = 8 + int(extra * 0.10)
+            w_due = 20 + int(extra * 0.12)
+            w_teach = 6 + int(extra * 0.05)
+            assigned = (w_subj - 8) + (w_due - 20) + (w_teach - 6)
+            w_assign = 20 + (extra - assigned)
+            col_widths = [3, 9, w_subj, w_assign, w_due, 10, w_teach]
+
+        # Spaltenbreiten der DataTable fest zuweisen, um den Leerraum rechts vollständig zu schließen
+        if dt.columns:
+            for col_obj, w in zip(dt.columns.values(), col_widths):
+                col_obj.width = w
+                col_obj.auto_width = False
+
+        max_title_len = col_widths[3]
+        max_course_len = col_widths[2]
+        max_due_len = col_widths[4]
+        max_teach_len = col_widths[6]
         seen_row_keys = set()
 
         for idx, t in enumerate(self.current_tasks, 1):
@@ -6768,38 +6811,47 @@ class AufgabenDetectorApp(App):
                     plat_badge = Text("✏️ Manual", style="bold green")
 
             # Subject styling with smart truncation
-            course_text = t.course
-            if len(course_text) > max_course_len:
-                course_text = course_text[:max_course_len - 1] + "…"
-            subj_styled = Text(course_text, style="dim cyan" if is_done else "bold cyan")
+            clean_course = " ".join(t.course.replace("\r\n", " ").replace("\n", " ").replace("\r", " ").split())
+            if len(clean_course) > max_course_len:
+                course_text = clean_course[: max(0, max_course_len - 3)].rstrip() + "..."
+            else:
+                course_text = clean_course
+            subj_styled = Text(course_text, style="dim cyan" if is_done else "bold cyan", no_wrap=True, overflow="ellipsis")
 
             # Status styling & normalization
             disp_txt = format_status_english(t)
 
             st_lower = t.status.lower()
             if is_done or disp_txt == "Completed":
-                status_styled = Text(f"✓ {disp_txt}", style="dim green")
+                status_styled = Text(f"✓ {disp_txt}", style="dim green", no_wrap=True, overflow="ellipsis")
             elif is_over or disp_txt == "Overdue" or "ueberfaellig" in st_lower or "überfällig" in st_lower or "overdue" in st_lower:
-                status_styled = Text(f"⚠ {disp_txt}", style="bold red")
+                status_styled = Text(f"⚠ {disp_txt}", style="bold red", no_wrap=True, overflow="ellipsis")
             elif disp_txt == "Open":
-                status_styled = Text("Open", style="bold yellow")
+                status_styled = Text("Open", style="bold yellow", no_wrap=True, overflow="ellipsis")
             else:
-                status_styled = Text(disp_txt, style="bold yellow")
+                status_styled = Text(disp_txt, style="bold yellow", no_wrap=True, overflow="ellipsis")
 
-            # Title styling (Open ones stand out immediately) with smart dynamic truncation
-            title_text = t.title
-            if len(title_text) > max_title_len:
-                title_text = title_text[:max_title_len - 1] + "…"
+            # Title styling (Open ones stand out immediately) with clean "..." truncation
+            clean_title = " ".join(t.title.replace("\r\n", " ").replace("\n", " ").replace("\r", " ").split())
+            if len(clean_title) > max_title_len:
+                title_text = clean_title[: max(0, max_title_len - 3)].rstrip() + "..."
+            else:
+                title_text = clean_title
             if is_done:
-                title_styled = Text(title_text, style="dim white")
+                title_styled = Text(title_text, style="dim white", no_wrap=True, overflow="ellipsis")
             elif is_over:
-                title_styled = Text(title_text, style="bold red")
+                title_styled = Text(title_text, style="bold red", no_wrap=True, overflow="ellipsis")
             else:
-                title_styled = Text(title_text, style="bold white")
+                title_styled = Text(title_text, style="bold white", no_wrap=True, overflow="ellipsis")
 
-            # Due date styling
-            due_styled = Text(t.due_date_str)
-            due_lower = t.due_date_str.lower()
+            # Due date styling with smart truncation
+            due_raw = " ".join(t.due_date_str.replace("\r\n", " ").replace("\n", " ").replace("\r", " ").split())
+            if len(due_raw) > max_due_len:
+                due_str = due_raw[: max(0, max_due_len - 3)].rstrip() + "..."
+            else:
+                due_str = due_raw
+            due_styled = Text(due_str, no_wrap=True, overflow="ellipsis")
+            due_lower = due_raw.lower()
             if is_done:
                 due_styled.stylize("dim")
             elif is_over or "überfällig" in due_lower or "overdue" in due_lower or "vor " in due_lower:
@@ -6809,9 +6861,12 @@ class AufgabenDetectorApp(App):
             elif "morgen" in due_lower or "tomorrow" in due_lower:
                 due_styled.stylize("bold cyan")
 
-            idx_styled = Text(str(idx), style="dim" if is_done else "bold")
-            teacher_str = t.teacher if t.teacher and t.teacher != "-" else ""
-            teacher_styled = Text(teacher_str, style="dim" if is_done else "white")
+            idx_styled = Text(str(idx), style="dim" if is_done else "bold", no_wrap=True)
+            clean_teacher = " ".join((t.teacher or "").replace("\r\n", " ").replace("\n", " ").replace("\r", " ").split())
+            teacher_str = clean_teacher if clean_teacher and clean_teacher != "-" else ""
+            if len(teacher_str) > max_teach_len:
+                teacher_str = teacher_str[: max(0, max_teach_len - 3)].rstrip() + "..."
+            teacher_styled = Text(teacher_str, style="dim" if is_done else "white", no_wrap=True, overflow="ellipsis")
 
             row_key = t.id if t.id not in seen_row_keys else f"{t.id}_{idx}"
             seen_row_keys.add(row_key)

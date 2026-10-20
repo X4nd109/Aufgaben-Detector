@@ -82,8 +82,12 @@ class Task:
     def is_completed(self) -> bool:
         if self.status.lower() in ["abgegeben", "bewertet", "completed", "done", "abgeschlossen", "zurueckgegeben", "zurückgegeben", "returned"]:
             return True
-        if self.status_display and any(kw in self.status_display.lower() for kw in ["abgegeben", "bewertet", "completed", "done", "erledigt", "zurückgegeben", "zurueckgegeben", "returned"]):
-            return True
+        if self.status_display:
+            sd_lower = self.status_display.lower()
+            if any(neg in sd_lower for neg in ["keine", "nicht", "noch nicht", "unvollständig"]):
+                return False
+            if any(kw in sd_lower for kw in ["abgegeben", "bewertet", "completed", "done", "erledigt", "zurückgegeben", "zurueckgegeben", "returned"]):
+                return True
         return False
 
     def to_dict(self) -> dict:

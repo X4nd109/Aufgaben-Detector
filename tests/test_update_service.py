@@ -16,9 +16,9 @@ from tui_app import SettingsModal, UpdateReminderModal, AufgabenDetectorApp
 class TestUpdateService(unittest.TestCase):
     def test_get_app_version(self):
         """Prüft die zentrale Versionskonfiguration."""
-        self.assertEqual(APP_VERSION, "1.0.5")
-        self.assertEqual(get_app_version(prefix=True), "v1.0.5")
-        self.assertEqual(get_app_version(prefix=False), "1.0.5")
+        self.assertEqual(APP_VERSION, "1.0.6")
+        self.assertEqual(get_app_version(prefix=True), "v1.0.6")
+        self.assertEqual(get_app_version(prefix=False), "1.0.6")
 
     def test_parse_version(self):
         """Prüft das Parsen diverser Versions-Strings in Zahlentupel."""
@@ -105,9 +105,9 @@ class TestUpdateService(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status = 200
         mock_data = {
-            "tag_name": "v1.0.5",
-            "name": "Aufgaben-Detector v1.0.5",
-            "html_url": "https://github.com/X4nd109/Aufgaben-Detector/releases/tag/v1.0.5",
+            "tag_name": "v1.0.6",
+            "name": "Aufgaben-Detector v1.0.6",
+            "html_url": "https://github.com/X4nd109/Aufgaben-Detector/releases/tag/v1.0.6",
             "assets": [
                 {
                     "name": "source_code.zip",

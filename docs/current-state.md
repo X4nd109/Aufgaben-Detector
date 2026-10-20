@@ -1,7 +1,7 @@
 # Current Project State & Session Handoff — Aufgaben-Detector
 
 > **Last Updated**: 2026-10-20  
-> **Active Milestone**: Milestone 3 — In-App Auto-Update & High-DPI UI Polish (v1.0.5)
+> **Active Milestone**: Milestone 3 — In-App Auto-Update & High-DPI UI Polish (v1.0.6)
 
 ---
 
@@ -106,6 +106,15 @@
   - **SettingsModal Button-Clipping behoben**: `#settings_dialog` auf `VerticalScroll` umgestellt, Button-Abstände (`margin-bottom: 1;`, `padding: 1 2;`) exakt an `FilterMenuModal` angeglichen und maximale Höhe auf `96%` erweitert. Der `[↩️ Close [ESC]]`-Button wird nicht mehr abgeschnitten und bleibt jederzeit voll sichtbar und erreichbar.
   - **FilterMenuModal Bereinigung**: Die redundante Textzeile (`#filter_info`) unter dem Titel („Status: ... | Due Window: ...“) wurde entfernt, da die Zustände bereits auf den Buttons abgebildet werden.
 
+- [x] **Main Task Dashboard Vollbreiten-Spaltenverteilung & Beseitigung der Scrollleiste (v1.0.8)**:
+  - Dynamische proportionale Breitenberechnung aller 7 Spalten (`#`, `Platform`, `Subject`, `Assignment`, `Due Date`, `Status`, `Teacher`) basierend auf der tatsächlichen Fenster-/Container-Breite analog zum Exams-Screen.
+  - Spaltenbreiten werden explizit auf den `DataTable`-Spalten gesetzt (`col.width`, `auto_width = False`), wodurch die Tabelle 100 % der Fensterbreite ausfüllt und horizontaler Überlauf sowie die Scrollleiste vollständig eliminiert werden.
+  - Spalte *Assignment* erhält den flexiblen Mittelteil der Breite und wird bei Überschreitung sauber mit `...` (3 ASCII-Punkte) gekürzt (z. B. `OverTheWire/Bandit_0-6_Linux...`).
+  - Zeilenumbrüche und Whitespace-Spitzen in Titeln und Notizen werden vor der Darstellung bereinigt, um Mehrzeiligkeit oder Formatierungsbrüche zu verhindern.
+  - Reagiert sofort auf Terminalgrößenänderungen via `on_resize(term_w_override=...)`.
+  - **Moodle-Status-Negationsprüfung**: Negationsabsicherung in `Task.is_completed` und `format_status_english`: Texte wie *„Bisher wurden keine Aufgaben abgegeben“* oder *„nicht abgegeben“* werden nicht mehr fälschlicherweise durch das Teilwort *„abgegeben“* als erledigt gewertet, sondern bleiben korrekt als `Open` erhalten.
+  - 3 neue automatisierte Tests in `tests/test_tui_app.py` (insgesamt 249 Tests in der Gesamtsuite mit 100 % Erfolgsquote).
+
 ---
 
 ## 2. In Progress / Immediate Next Steps
@@ -121,26 +130,19 @@
 
 ## 3. Known Issues & Blockers
 
-- *None active* (All 246 test suite tests passing cleanly with 100% pass rate).
+- *None active* (All 249 test suite tests passing cleanly with 100% pass rate).
 
 ---
 
 ## 4. Session Handoff Notes (Context for Next Agent)
 
-- **Recent Achievements (2026-10-20 — v1.0.7 In-App Auto-Update Feature)**:
-  - **1-Click Auto-Update Flow (`UpdateReminderModal`)**:
-    - `UpdateReminderModal` bietet nun den primären Button `[⬇️ Update jetzt installieren]`.
-    - Download erfolgt über `download_update_installer` in Chunks mit Echtzeit-Fortschrittsanzeige im Modal (`ProgressBar`, MB-Anzeige, Prozent, Abbruch-Button).
-    - `launch_update_and_restart` generiert ein entkoppeltes Windows-Runner-Skript in `%TEMP%\AufgabenDetector_Update\apply_update.cmd`.
-    - Das Skript wartet auf das Beenden der TUI-App, ruft den Setup-Installer mit `/DIR="<app_dir>" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOTASKS=1 /UPDATE=1` auf, führt `setup.bat /silent` für pip-Updates aus und startet die App mit `run.bat` neu.
-    - Weder `config.json`, `data/` noch Caches gehen verloren; der PATH-Befehl `tasks` wird nicht modifiziert.
-    - 5 neue Tests in `tests/test_update_service.py` (Gesamtsuite: 246 Tests bestanden).
-- **Previous Achievements (2026-10-20 — v1.0.6 High-DPI Dialogs Update)**:
-  - 4K High-DPI Resolution Fix für Datei- & Ordnerauswahl via COM `IFileOpenDialog` (Per-Monitor DPI Aware v2).
-- **Previous Achievements (2026-10-19 — v1.0.4 & v1.0.5 Release)**:
-  - Verzeichnis-Schnellzugriff (Directories Tab, CLI, Persistenz in `data/directories.json`).
-  - OLED Theme mit purem Schwarz `#000000`.
-  - Windows Tastatur-Shortcuts (STRG+A, Pos1, Ende, STRG+Backspace mit 5-Stufen-Absicherung).
+- **Recent Achievements (2026-10-20 — Main Dashboard Dynamic Columns & Assignment Truncation)**:
+  - Vollständige dynamische Spaltenanpassung auf 100 % Containerbreite ohne horizontale Scrollleiste.
+  - Sauberes Truncating langer Angaben mit `...` (z. B. `OverTheWire/Bandit_0-6_Linux...`).
+  - Negationsabsicherung für Moodle-Statustexte (*"keine Aufgaben abgegeben"*).
+  - 249 Tests in der Gesamtsuite mit 100 % Erfolgsquote.
+- **Previous Achievements (2026-10-20 — v1.0.7 In-App Auto-Update Feature)**:
+  - 1-Click Auto-Update Flow (`UpdateReminderModal`) mit Chunk-Download, Fortschrittsanzeige und geräuschlosem Inno Setup Handoff.
 - **Entry Points**:
   - Desktop / Interactive: `run.bat` oder `python main.py`
   - Agent / Script: `tasks.bat <subcommand>` oder `python main.py <subcommand>`

@@ -615,7 +615,75 @@ class TestAufgabenDetectorTUI(unittest.IsolatedAsyncioTestCase):
             # Spalte 3 ist Aufgabe
             title_text = str(row_vals[3])
             self.assertTrue(len(title_text) <= 60)
-            self.assertTrue(title_text.endswith("…"))
+            self.assertTrue(title_text.endswith("..."))
+
+    async def test_table_no_horizontal_overflow_and_full_width(self):
+        """Prüft, dass die Spaltenbreiten dynamisch gesetzt werden (auto_width=False) und niemals horizontal überlaufen."""
+        from textual.widgets import DataTable
+        from models import Task
+
+        t_bandit = Task(
+            id="moodle_bandit",
+            platform="moodle",
+            course="SESD",
+            course_full="SESD - Security Software Development",
+            title="OverTheWire/Bandit_0-6_Linux:ls ,cd ,cat ,file ,du ,find ,grep",
+            due_date_str="Montag, 2. November 2026, 23:59",
+            status="offen",
+            status_display="Bisher wurden keine Aufgaben abgegeben",
+            url="https://moodle.spengergasse.at",
+            teacher="-"
+        )
+        self.mgr.tasks = [t_bandit]
+
+        for w in [90, 110, 123, 136, 160]:
+            app = AufgabenDetectorApp(self.mgr)
+            async with app.run_test(size=(w, 35)) as pilot:
+                dt = app.query_one("#tasks_table", DataTable)
+                # Spaltenbreiten müssen explizit gesetzt und auto_width=False sein
+                for col in dt.columns.values():
+                    self.assertFalse(col.auto_width)
+                    self.assertGreater(col.width, 0)
+                # Keine horizontale Scrollleiste
+                self.assertLessEqual(dt.virtual_size.width, dt.size.width)
+                # Assignment-Zelle muss sauber auf Spaltenbreite mit "..." gekürzt sein
+                row_vals = dt.get_row("moodle_bandit")
+                assignment_cell = str(row_vals[3])
+                self.assertTrue(assignment_cell.startswith("OverTheWire/Bandit"))
+                self.assertTrue(assignment_cell.endswith("..."))
+
+    def test_status_negation_not_marked_completed(self):
+        """Prüft, dass Status-Meldungen wie 'Bisher wurden keine Aufgaben abgegeben' nicht fälschlich als erledigt gelten."""
+        from models import Task
+        from tui_app import format_status_english
+
+        t_open = Task(
+            id="t_open_1",
+            platform="moodle",
+            course="SESD",
+            course_full="SESD - Security Software Development",
+            title="OverTheWire Task",
+            due_date_str="Montag, 2. November 2026, 23:59",
+            status="offen",
+            status_display="Bisher wurden keine Aufgaben abgegeben",
+            url="https://moodle.spengergasse.at",
+        )
+        self.assertFalse(t_open.is_completed)
+        self.assertEqual(format_status_english(t_open), "Open")
+
+        t_not_sub = Task(
+            id="t_open_2",
+            platform="moodle",
+            course="SESD",
+            course_full="SESD - Security Software Development",
+            title="OverTheWire Task 2",
+            due_date_str="Montag, 2. November 2026, 23:59",
+            status="offen",
+            status_display="Nicht abgegeben",
+            url="https://moodle.spengergasse.at",
+        )
+        self.assertFalse(t_not_sub.is_completed)
+        self.assertEqual(format_status_english(t_not_sub), "Open")
 
     async def test_dynamic_widths_and_resize_stability(self):
         """Prüft, dass die Tabelle über diverse Breiten (80 bis 160) stabil bleibt und Cursor bei Resize nicht springt."""
