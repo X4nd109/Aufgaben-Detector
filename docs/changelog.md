@@ -11,6 +11,19 @@ und dieses Projekt hält sich an [Semantic Versioning](https://semver.org/lang/d
 
 ---
 
+## [1.0.7] - 2026-10-20
+
+### Fixed
+- **UpdateReminderModal Englisch-Lokalisierung, Button-Layout & Text-Clipping**:
+  - **Vollständige englische Lokalisierung**: Alle deutschen Texte, Versionsangaben (`Current Version`, `Latest Version`), Hinweistexte, Fortschrittsmeldungen, Fehlermeldungen und Button-Beschriftungen auf Englisch umgestellt.
+  - **2-Zeilen-Button-Layout**: Der `Later [ESC]`-Button wurde unter den beiden Hauptaktionen (`Install Update Now` und `View in Browser`) zentriert platziert, damit kein Button mehr am Dialogrand abgeschnitten wird.
+  - **Analoges Error-Buttons-Layout**: Auch bei Downloadfehlern sind die Aktionen nun 2-zeilig aufgeteilt (`Try Again` + `Download in Browser` in Zeile 1, `Close [ESC]` zentriert in Zeile 2).
+  - **Hinweistext-Clipping behoben**: `width: 100%` auf `#update_hint` gesetzt für sauberen automatischen Mehrzeilenumbruch, und die Dialogbreite für harmonische Abstände leicht auf `70` Spalten erweitert.
+  - **Rich Markup-Absicherung**: `\[ESC]`-Klammern in Button-Labels maskiert, damit Textuals Markup-Parser Tastatur-Shortcuts nicht verschluckt.
+  - Neuer automatisierter Test `test_update_reminder_modal_layout_and_english_texts` in `tests/test_update_service.py` (insgesamt 250 Tests in der Gesamtsuite mit 100 % Erfolgsquote).
+
+---
+
 ## [1.0.6] - 2026-10-20
 
 ### Fixed

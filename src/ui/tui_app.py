@@ -2811,7 +2811,7 @@ class UpdateReminderModal(ModalScreen[None]):
         align: center middle;
     }
     #update_dialog {
-        width: 68;
+        width: 70;
         max-height: 85%;
         height: auto;
         border: thick #a6e3a1;
@@ -2836,6 +2836,7 @@ class UpdateReminderModal(ModalScreen[None]):
         margin-bottom: 0;
     }
     #update_hint {
+        width: 100%;
         text-align: center;
         margin-bottom: 1;
         color: #cdd6f4;
@@ -2873,13 +2874,27 @@ class UpdateReminderModal(ModalScreen[None]):
         text-align: center;
         text-style: bold;
     }
-    #update_buttons_row, #update_download_buttons_row, #update_error_buttons_row {
+    #update_buttons_container, #update_error_buttons_container {
+        height: auto;
+        width: 100%;
+        margin-top: 1;
+    }
+    .update_buttons_row {
+        height: auto;
+        width: 100%;
+        align: center middle;
+    }
+    .update_secondary_row {
+        margin-top: 1;
+    }
+    #update_download_buttons_row {
         height: auto;
         width: 100%;
         align: center middle;
         margin-top: 1;
+        display: none;
     }
-    #update_download_buttons_row, #update_error_buttons_row {
+    #update_error_buttons_container {
         display: none;
     }
     .update_btn {
@@ -2903,32 +2918,36 @@ class UpdateReminderModal(ModalScreen[None]):
         rel_name = self.update_info.get("name") or f"v{lat_v}"
 
         with Vertical(id="update_dialog"):
-            yield Label("🚀 Neue Version verfügbar!", id="update_title")
+            yield Label("🚀 New Version Available!", id="update_title")
             with Vertical(id="update_info_box"):
-                yield Label(f"Aktuelle Version: [bold white]v{cur_v}[/]", classes="update_version_line")
-                yield Label(f"Neueste Version:  [bold #a6e3a1]v{lat_v}[/] ({escape(rel_name)})", classes="update_version_line")
+                yield Label(f"Current Version: [bold white]v{cur_v}[/]", classes="update_version_line")
+                yield Label(f"Latest Version:   [bold #a6e3a1]v{lat_v}[/] ({escape(rel_name)})", classes="update_version_line")
 
-            yield Label("Ein neueres Release mit Verbesserungen und Fixes steht auf GitHub bereit.", id="update_hint")
+            yield Label("A newer release with improvements and bug fixes is available on GitHub.", id="update_hint")
 
             with Vertical(id="update_progress_box"):
                 yield ProgressBar(total=100, show_eta=False, show_percentage=True, id="update_pbar")
-                yield Label("Initialisiere Download...", id="update_status_lbl")
+                yield Label("Initializing download...", id="update_status_lbl")
 
             with Vertical(id="update_error_box"):
                 yield Label("", id="update_error_lbl")
 
-            with Horizontal(id="update_buttons_row"):
-                yield Button("⬇️ Update jetzt installieren", id="btn_update_install", variant="success", classes="update_btn")
-                yield Button("🌐 Im Browser ansehen", id="btn_update_open", variant="default", classes="update_btn")
-                yield Button("Später [ESC]", id="btn_update_dismiss", variant="default", classes="update_btn")
+            with Vertical(id="update_buttons_container"):
+                with Horizontal(classes="update_buttons_row"):
+                    yield Button("⬇️ Install Update Now", id="btn_update_install", variant="success", classes="update_btn")
+                    yield Button("🌐 View in Browser", id="btn_update_open", variant="default", classes="update_btn")
+                with Horizontal(classes="update_buttons_row update_secondary_row"):
+                    yield Button(r"Later \[ESC]", id="btn_update_dismiss", variant="default", classes="update_btn")
 
             with Horizontal(id="update_download_buttons_row"):
-                yield Button("❌ Abbrechen", id="btn_update_cancel", variant="error", classes="update_btn")
+                yield Button("❌ Cancel", id="btn_update_cancel", variant="error", classes="update_btn")
 
-            with Horizontal(id="update_error_buttons_row"):
-                yield Button("🔄 Erneut versuchen", id="btn_update_retry", variant="primary", classes="update_btn")
-                yield Button("🌐 Im Browser herunterladen", id="btn_update_fallback", variant="success", classes="update_btn")
-                yield Button("Schließen [ESC]", id="btn_update_error_close", variant="default", classes="update_btn")
+            with Vertical(id="update_error_buttons_container"):
+                with Horizontal(classes="update_buttons_row"):
+                    yield Button("🔄 Try Again", id="btn_update_retry", variant="primary", classes="update_btn")
+                    yield Button("🌐 Download in Browser", id="btn_update_fallback", variant="success", classes="update_btn")
+                with Horizontal(classes="update_buttons_row update_secondary_row"):
+                    yield Button(r"Close \[ESC]", id="btn_update_error_close", variant="default", classes="update_btn")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
@@ -2948,8 +2967,8 @@ class UpdateReminderModal(ModalScreen[None]):
         installer_url = self.update_info.get("installer_url")
         if not installer_url:
             self._show_error(
-                "Kein Installer-Paket (.exe) in diesem Release gefunden.\n"
-                "Bitte lade das Update manuell über den Browser herunter."
+                "No installer package (.exe) found in this release.\n"
+                "Please download the update manually from your browser."
             )
             return
 
@@ -2958,13 +2977,13 @@ class UpdateReminderModal(ModalScreen[None]):
             self.query_one("#update_hint", Label).styles.display = "none"
             self.query_one("#update_error_box", Vertical).styles.display = "none"
             self.query_one("#update_progress_box", Vertical).styles.display = "block"
-            self.query_one("#update_buttons_row", Horizontal).styles.display = "none"
+            self.query_one("#update_buttons_container", Vertical).styles.display = "none"
             self.query_one("#update_download_buttons_row", Horizontal).styles.display = "block"
-            self.query_one("#update_error_buttons_row", Horizontal).styles.display = "none"
+            self.query_one("#update_error_buttons_container", Vertical).styles.display = "none"
 
             pbar = self.query_one("#update_pbar", ProgressBar)
             pbar.update(progress=0, total=100)
-            self.query_one("#update_status_lbl", Label).update("Verbinde mit GitHub...")
+            self.query_one("#update_status_lbl", Label).update("Connecting to GitHub...")
         except Exception:
             pass
 
@@ -3002,7 +3021,7 @@ class UpdateReminderModal(ModalScreen[None]):
             else:
                 app.call_from_thread(
                     self._on_download_error,
-                    "Download fehlgeschlagen. Bitte Internetverbindung prüfen."
+                    "Download failed. Please check your internet connection."
                 )
         except Exception:
             pass
@@ -3015,9 +3034,9 @@ class UpdateReminderModal(ModalScreen[None]):
             tot_mb = tot / (1024 * 1024)
             status_lbl = self.query_one("#update_status_lbl", Label)
             if tot > 0:
-                status_lbl.update(f"Lade herunter: {cur_mb:.1f} MB / {tot_mb:.1f} MB ({pct:.0f}%)")
+                status_lbl.update(f"Downloading: {cur_mb:.1f} MB / {tot_mb:.1f} MB ({pct:.0f}%)")
             else:
-                status_lbl.update(f"Lade herunter: {cur_mb:.1f} MB")
+                status_lbl.update(f"Downloading: {cur_mb:.1f} MB")
         except Exception:
             pass
 
@@ -3027,7 +3046,7 @@ class UpdateReminderModal(ModalScreen[None]):
             self.query_one("#update_progress_box", Vertical).styles.display = "none"
             self.query_one("#update_download_buttons_row", Horizontal).styles.display = "none"
             self.query_one("#update_hint", Label).styles.display = "block"
-            self.query_one("#update_buttons_row", Horizontal).styles.display = "block"
+            self.query_one("#update_buttons_container", Vertical).styles.display = "block"
         except Exception:
             pass
 
@@ -3039,13 +3058,13 @@ class UpdateReminderModal(ModalScreen[None]):
         try:
             self.query_one("#update_progress_box", Vertical).styles.display = "none"
             self.query_one("#update_download_buttons_row", Horizontal).styles.display = "none"
-            self.query_one("#update_buttons_row", Horizontal).styles.display = "none"
+            self.query_one("#update_buttons_container", Vertical).styles.display = "none"
             self.query_one("#update_hint", Label).styles.display = "none"
 
             err_lbl = self.query_one("#update_error_lbl", Label)
             err_lbl.update(f"⚠️ {err_msg}")
             self.query_one("#update_error_box", Vertical).styles.display = "block"
-            self.query_one("#update_error_buttons_row", Horizontal).styles.display = "block"
+            self.query_one("#update_error_buttons_container", Vertical).styles.display = "block"
         except Exception:
             pass
 
@@ -3055,7 +3074,7 @@ class UpdateReminderModal(ModalScreen[None]):
             pbar = self.query_one("#update_pbar", ProgressBar)
             pbar.update(progress=100, total=100)
             status_lbl = self.query_one("#update_status_lbl", Label)
-            status_lbl.update("[bold #a6e3a1]✓ Download fertig! Bereite Installation vor...[/]")
+            status_lbl.update("[bold #a6e3a1]✓ Download complete! Preparing installation...[/]")
             self.query_one("#update_download_buttons_row", Horizontal).styles.display = "none"
         except Exception:
             pass
@@ -3066,7 +3085,7 @@ class UpdateReminderModal(ModalScreen[None]):
             # Kurzer visueller Übergang vor dem Schließen
             self.set_timer(1.2, self.app.exit)
         else:
-            self._show_error("Update-Runner konnte nicht gestartet werden. Bitte Installer manuell ausführen.")
+            self._show_error("Update runner could not be started. Please run the installer manually.")
 
     def action_cancel_download(self) -> None:
         if self._cancel_event:

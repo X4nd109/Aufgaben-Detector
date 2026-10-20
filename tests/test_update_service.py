@@ -7,7 +7,8 @@ import unittest
 from unittest.mock import patch, MagicMock
 import urllib.error
 
-from textual.widgets import Label
+from textual.widgets import Label, Button
+from textual.containers import Horizontal, Vertical
 from src.core.config import APP_VERSION, get_app_version
 from src.services.update_service import parse_version, is_newer_version, check_for_updates
 from tui_app import SettingsModal, UpdateReminderModal, AufgabenDetectorApp
@@ -16,9 +17,9 @@ from tui_app import SettingsModal, UpdateReminderModal, AufgabenDetectorApp
 class TestUpdateService(unittest.TestCase):
     def test_get_app_version(self):
         """Prüft die zentrale Versionskonfiguration."""
-        self.assertEqual(APP_VERSION, "1.0.6")
-        self.assertEqual(get_app_version(prefix=True), "v1.0.6")
-        self.assertEqual(get_app_version(prefix=False), "1.0.6")
+        self.assertEqual(APP_VERSION, "1.0.7")
+        self.assertEqual(get_app_version(prefix=True), "v1.0.7")
+        self.assertEqual(get_app_version(prefix=False), "1.0.7")
 
     def test_parse_version(self):
         """Prüft das Parsen diverser Versions-Strings in Zahlentupel."""
@@ -263,8 +264,8 @@ class TestUpdateUI(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             mock_browser_open.assert_called_once_with("https://github.com/X4nd109/Aufgaben-Detector/releases/tag/v1.0.3")
 
-    @patch("src.ui.tui_app.download_update_installer", return_value=True)
-    @patch("src.ui.tui_app.launch_update_and_restart", return_value=True)
+    @patch("tui_app.download_update_installer", return_value=True)
+    @patch("tui_app.launch_update_and_restart", return_value=True)
     async def test_update_reminder_modal_install_flow(self, mock_launch, mock_download):
         """Prüft den Klick auf 'Jetzt aktualisieren' und UI-Statuswechsel."""
         info = {
@@ -286,3 +287,39 @@ class TestUpdateUI(unittest.IsolatedAsyncioTestCase):
             btn_install.press()
             await pilot.pause()
             self.assertTrue(modal._is_downloading or mock_launch.called)
+
+    async def test_update_reminder_modal_layout_and_english_texts(self):
+        """Prüft die englischen Texte und die 2-Zeilen-Button-Struktur des UpdateReminderModals."""
+        info = {
+            "current_version": "1.0.5",
+            "latest_version": "1.0.6",
+            "tag_name": "v1.0.6",
+            "name": "v1.0.6",
+            "html_url": "https://github.com/X4nd109/Aufgaben-Detector/releases/tag/v1.0.6",
+        }
+        modal = UpdateReminderModal(info)
+        app = AufgabenDetectorApp(self.mgr, sync_on_startup=False)
+        async with app.run_test() as pilot:
+            await app.push_screen(modal)
+            title_lbl = modal.query_one("#update_title", Label)
+            self.assertIn("New Version Available!", str(title_lbl.render()))
+
+            hint_lbl = modal.query_one("#update_hint", Label)
+            self.assertIn("A newer release with improvements and bug fixes is available on GitHub.", str(hint_lbl.render()))
+
+            btn_install = modal.query_one("#btn_update_install", Button)
+            self.assertIn("Install Update Now", str(btn_install.label))
+
+            btn_open = modal.query_one("#btn_update_open", Button)
+            self.assertIn("View in Browser", str(btn_open.label))
+
+            btn_dismiss = modal.query_one("#btn_update_dismiss", Button)
+            self.assertIn("Later [ESC]", str(btn_dismiss.label))
+
+            container = modal.query_one("#update_buttons_container", Vertical)
+            self.assertIsNotNone(container)
+            rows = list(container.query(Horizontal))
+            self.assertEqual(len(rows), 2)
+            self.assertIn(btn_install, rows[0].children)
+            self.assertIn(btn_open, rows[0].children)
+            self.assertIn(btn_dismiss, rows[1].children)

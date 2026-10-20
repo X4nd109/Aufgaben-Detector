@@ -1,7 +1,7 @@
 # Current Project State & Session Handoff — Aufgaben-Detector
 
 > **Last Updated**: 2026-10-20  
-> **Active Milestone**: Milestone 3 — In-App Auto-Update & High-DPI UI Polish (v1.0.6)
+> **Active Milestone**: Milestone 3 — In-App Auto-Update & High-DPI UI Polish (v1.0.7)
 
 ---
 
@@ -115,6 +115,14 @@
   - **Moodle-Status-Negationsprüfung**: Negationsabsicherung in `Task.is_completed` und `format_status_english`: Texte wie *„Bisher wurden keine Aufgaben abgegeben“* oder *„nicht abgegeben“* werden nicht mehr fälschlicherweise durch das Teilwort *„abgegeben“* als erledigt gewertet, sondern bleiben korrekt als `Open` erhalten.
   - 3 neue automatisierte Tests in `tests/test_tui_app.py` (insgesamt 249 Tests in der Gesamtsuite mit 100 % Erfolgsquote).
 
+- [x] **UpdateReminderModal Englisch-Lokalisierung, Button-Layout & Text-Clipping (v1.0.8 Polish)**:
+  - **Vollständige englische Lokalisierung**: Alle Textbausteine des Update-Erinnerungsmodals auf Englisch umgestellt (`🚀 New Version Available!`, `Current Version: ...`, `Latest Version: ...`, `A newer release with improvements and bug fixes is available on GitHub.`, `Initializing download...`, `Connecting to GitHub...`, `Downloading: ... MB / ... MB`, `Download complete! Preparing installation...`, sowie Fehlermeldungen).
+  - **2-Zeilen-Button-Layout**: Der `Later [ESC]`-Button ist nun unter den beiden Haupt-Aktionen (`⬇️ Install Update Now` und `🌐 View in Browser`) zentriert platziert, sodass kein Button mehr am Dialogrand abgeschnitten wird.
+  - **Analoges Error-Buttons-Layout**: Auch im Fehlerzustand sind die Optionen auf 2 Zeilen aufgeteilt (`🔄 Try Again` + `🌐 Download in Browser` oben, `Close [ESC]` zentriert unten).
+  - **Beseitigung des Text-Clippings**: `width: 100%` auf `#update_hint` gesetzt, wodurch der Hinweistext automatisch sauber mehrzeilig umbrochen wird. Dialogbreite leicht auf 70 Spalten vergrößert für entspannte Ränder.
+  - Maskierung der `\[ESC]`-Klammern, damit Textuals Content/Rich-Markup-Parser die Tastenkombination nicht verschluckt.
+  - Neuer Test `test_update_reminder_modal_layout_and_english_texts` in `tests/test_update_service.py` (insgesamt 250 Tests in der Gesamtsuite mit 100 % Erfolgsquote).
+
 ---
 
 ## 2. In Progress / Immediate Next Steps
@@ -130,17 +138,17 @@
 
 ## 3. Known Issues & Blockers
 
-- *None active* (All 249 test suite tests passing cleanly with 100% pass rate).
+- *None active* (All 250 test suite tests passing cleanly with 100% pass rate).
 
 ---
 
 ## 4. Session Handoff Notes (Context for Next Agent)
 
-- **Recent Achievements (2026-10-20 — Main Dashboard Dynamic Columns & Assignment Truncation)**:
-  - Vollständige dynamische Spaltenanpassung auf 100 % Containerbreite ohne horizontale Scrollleiste.
-  - Sauberes Truncating langer Angaben mit `...` (z. B. `OverTheWire/Bandit_0-6_Linux...`).
-  - Negationsabsicherung für Moodle-Statustexte (*"keine Aufgaben abgegeben"*).
-  - 249 Tests in der Gesamtsuite mit 100 % Erfolgsquote.
+- **Recent Achievements (2026-10-20 — UpdateReminderModal English Localization & 2-Row Button Layout)**:
+  - Vollständige Lokalisierung aller Texte im UpdateReminderModal auf Englisch.
+  - 2-Zeilen-Button-Layout verhindert Abschneiden von Buttons.
+  - Multi-Line-Wrapping für den Hinweistext via `width: 100%`.
+  - 250 Tests in der Gesamtsuite mit 100 % Erfolgsquote.
 - **Previous Achievements (2026-10-20 — v1.0.7 In-App Auto-Update Feature)**:
   - 1-Click Auto-Update Flow (`UpdateReminderModal`) mit Chunk-Download, Fortschrittsanzeige und geräuschlosem Inno Setup Handoff.
 - **Entry Points**:
