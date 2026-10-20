@@ -270,3 +270,24 @@ This document records high-impact architectural choices, library selections, and
   - Positive: Frictionless 1-click updates without leaving the terminal; zero data loss; clean full-width UI utilization on widescreen displays.
   - Negative: Inno Setup compilation is required for testing end-to-end silent installer execution.
 
+---
+
+## ADR-018: Column Prioritization Budgeting & Jitter-Free Single-Line Info Bar
+
+- **Date**: 2026-10-20
+- **Status**: Accepted
+- **Context**:
+  1. On multi-monitor setups (e.g. 4K with 150% scaling alongside 1440p displays), starting a background sync dynamically toggled `SyncSpinner` visibility, shrinking available horizontal width and pushing the sync timestamp (`19:09:06`) onto a second line.
+  2. The table column header `Teacher` (7 letters) had a hardcoded base width of 6 characters, truncating it to `Teache`.
+  3. Under standard window widths, `Assignment` previously consumed ~73 % of extra space, forcing full due dates (e.g. `Montag, 2. November, 23:59`) and teacher abbreviations to truncate prematurely.
+- **Decision**:
+  1. **Strict Single-Line Info Bar with Spacing**: Lock `#info_bar` and `#info_stats` to `height: 1` with `overflow-y: hidden; overflow-x: hidden;` and add `margin-bottom: 1;` to guarantee an empty separator line above the table without allowing text wrapping.
+  2. **Zero-Layout-Shift Sync Spinner**: Assign `SyncSpinner` a permanent `display: block; width: 3; height: 1;` footprint so activating background sync alters available width by exactly 0 characters.
+  3. **Priority Column Budgeting**:
+     - Preserve full `Due Date` (base 28–32 chars) and full `Teacher` (min. 8 chars, 7 on tiny windows).
+     - Allocate all remaining flexible width to `Assignment` (`avail_content - sum(others)`), making it the primary column to absorb window shrinkage with clean `...` truncation.
+  4. **Post-Mount 4K/1440p Viewport Calibration**: In `_sync_initial_viewport()`, trigger `refresh_table()` once Textual finishes the DOM layout pass and true container dimensions are measured.
+- **Consequences**:
+  - Positive: Zero visual jitter during background sync; no truncation of headers or complete due dates; immediate adaptation on 4K and 1440p monitors upon launch.
+  - Negative: On unusually narrow terminals (< 80 columns), `Assignment` titles are heavily truncated with `...` to preserve due dates and teacher codes.
+

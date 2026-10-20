@@ -9,7 +9,7 @@
 
 | Element / View | Typ | Kurzbeschreibung |
 | :--- | :--- | :--- |
-| `Main Task Dashboard` | Screen | Farbcodierte Haupttabelle aller offenen und fälligen Moodle- und Teams-Aufgaben (`AufgabenDetectorApp`). |
+| `Main Task Dashboard` | Screen | Farbcodierte Haupttabelle aller offenen und fälligen Moodle- und Teams-Aufgaben (`AufgabenDetectorApp`) mit priorisierten Spalten (Due Date & Teacher voll erhalten, Assignment flexibel) und jitter-freier Einzeilen-Statusleiste. |
 | `Tests & Exams Screen` (`[E]`) | Screen | WebUntis Prüfungskalender mit dynamischer Vollbreiten-Verteilung aller 9 Spalten ohne rechten Leerraum und horizontalem Scrollbar-Puffer. |
 | `CommandPalette` (`Backspace` / `/`) | Overlay | Schnellsuchleiste mit `Tab`-Umschaltung zwischen *Courses*, *Schoolbooks* und *Directories*; `Backspace` bei leerer Leiste schließt das Menü; behält Suchtext beim Umschalten. |
 | `Trash / Hidden Screen` (`[G]`) | Modal | Übersicht aller ausgeblendeten oder gelöschten Aufgaben mit Wiederherstellungsoption (`TrashModal`). |
@@ -27,7 +27,7 @@
 | `ExcuseLetterModal` (`[U]`) | Modal | Fehlstunden-Übersicht mit Stundenplan-Abgleich und 1-Klick-PDF-Export für die Schule. |
 | `ExamDetailModal` | Modal | Zeigt Prüfungsdetails und ermöglicht das Bearbeiten persönlicher Stoff-Notizen (`exam_notes.json`). |
 | `AddExamModal` | Modal | Formular zum Eintragen manueller Prüfungstermine mit nativer Wochentagserkennung. |
-| `SettingsModal` (`[O]`) | Modal | Scrollbarer Konfigurationsdialog mit Versionsanzeige in der oberen rechten Ecke (`v1.0.7`), Themes, Logins und Schülereinstellungen. |
+| `SettingsModal` (`[O]`) | Modal | Scrollbarer Konfigurationsdialog mit Versionsanzeige in der oberen rechten Ecke (`v1.0.8`), Themes, Logins und Schülereinstellungen. |
 | `UpdateReminderModal` | Modal | Popup-Erinnerung bei neueren GitHub-Releases mit 1-Klick-In-App-Download, Fortschrittsbalken und automatischer Installation im selben Verzeichnis (ohne PATH-Änderung oder Datenverlust). |
 | `LoginChoiceModal` (`[L]`) | Modal | Zentrales Auswahlmenü für Anmeldungen bei Moodle, Microsoft Teams und WebUntis. |
 | `TeamsSetupModal` | Modal | Geführter Teams-Login via Playwright-Chromium mit Passkey-, 2FA- oder Kennwort-Unterstützung. |
