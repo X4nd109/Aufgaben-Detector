@@ -234,3 +234,39 @@ This document records high-impact architectural choices, library selections, and
   - Positive: 100% reliable word deletion across all terminal emulators on Windows; zero collisions with global Backspace shortcuts; graceful fallback on non-Windows platforms.
   - Negative: Direct Win32 API calls (`ctypes.windll.user32`) are platform-specific, guarded by `if os.name == "nt"`.
 
+---
+
+## ADR-016: Per-Monitor DPI-Awareness v2 & Native Windows COM Dialog Architecture
+
+- **Date**: 2026-10-20
+- **Status**: Accepted
+- **Context**: 
+  1. On modern multi-monitor and high-DPI displays (4K, 1440p, 125%–200% scaling), legacy file/folder dialogs (e.g. Tkinter `filedialog` or default Windows Forms) appeared blurry due to DWM bitmap stretching („Low-Res-Explorer-Effekt“) and lacked native Windows Shell navigation (Quick Access, Search, breadcrumbs).
+  2. The application required true native Windows 11/10 Explorer picker dialogs for linking schoolbooks (files) and course directories (folders) without external GUI dependencies.
+- **Decision**:
+  1. **Central Windows Dialog Module (`src/core/win_dialogs.py`)**: Implement `enable_high_dpi_awareness()` invoking `user32.SetProcessDpiAwarenessContext(HANDLE(-4))` (`DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2`) at startup and prior to dialog invocation.
+  2. **Native COM `IFileOpenDialog` Implementation**: Implement direct COM vtable calls via `ctypes` (`CLSID_FileOpenDialog`, `IID_IFileOpenDialog`) with `FOS_PICKFOLDERS` for directory selection and file filters for PDF selection.
+  3. **Multi-Tier Fallback Cascade**: If COM initialization fails or runs in headless/cross-platform environments, fall back gracefully to DPI-aware Tkinter and PowerShell Windows Forms.
+- **Consequences**:
+  - Positive: Crystal-clear, native Windows Explorer dialogs with Quick Access and address bar search; zero third-party GUI library dependencies (PyQt/wxWidgets).
+  - Negative: Direct COM vtable dispatch via `ctypes` requires careful memory management (`Release()` calls in `finally` blocks).
+
+---
+
+## ADR-017: In-App Auto-Update Pipeline via Detached Runner & Proportional Full-Width Layout
+
+- **Date**: 2026-10-20
+- **Status**: Accepted
+- **Context**:
+  1. When a new GitHub release is available, downloading the `.exe` manually from the browser creates unnecessary friction for users.
+  2. Installing updates must strictly preserve the existing installation directory, existing user settings (`config.json`), user data (`data/`), and caches (`cache/`), while avoiding changes to the Windows User `PATH` (skipping `tasks` command setup).
+  3. When running on wide screens (e.g. 140–180 columns), `ExamsScreen` previously left large empty areas on the right side and truncated topic descriptions prematurely.
+- **Decision**:
+  1. **1-Click In-App Downloader**: Add chunk-based downloading with Textual `ProgressBar`, real-time MB and speed tracking, and cancellation events directly into `UpdateReminderModal`.
+  2. **Detached Runner Architecture (`apply_update.cmd`)**: Generate a temporary batch script in `%TEMP%\AufgabenDetector_Update\apply_update.cmd`. The script waits for the active Python PID to exit, executes Inno Setup silently (`/DIR="<dir>" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOTASKS=1 /UPDATE=1`), runs `setup.bat /silent` for background pip updates, and restarts the TUI via `run.bat`.
+  3. **Preservation & Path Guards**: Configure `installer/aufgaben_detector.iss` to check `/NOTASKS=1` and skip running `setup_command.bat`.
+  4. **Proportional Full-Width Column Distribution**: Calculate available width dynamically in `ExamsScreen`, assign explicit column widths (`col.width`, `auto_width = False`), allocate 60 % of extra width to `Topic / Notes`, and reserve a 1-character buffer for vertical scrollbars to prevent horizontal scrollbars on any screen width.
+- **Consequences**:
+  - Positive: Frictionless 1-click updates without leaving the terminal; zero data loss; clean full-width UI utilization on widescreen displays.
+  - Negative: Inno Setup compilation is required for testing end-to-end silent installer execution.
+

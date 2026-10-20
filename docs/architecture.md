@@ -100,8 +100,10 @@ Aufgaben Detector/
 │   │   ├── dependency_checker.py # Pre-flight module checker & warning banner
 │   │   ├── license.py          # Legacy hardware fingerprinting / compatibility
 │   │   ├── models.py           # Dataclass definitions
-│   │   └── task_manager.py     # Central aggregation & caching coordinator
+│   │   ├── task_manager.py     # Central aggregation & caching coordinator
+│   │   └── win_dialogs.py      # Per-Monitor DPI-Awareness v2 & native Windows COM IFileOpenDialog
 │   ├── services/               # External portal integration adapters
+│   │   ├── directory_service.py # Directory linking, listing and Explorer launcher
 │   │   ├── excuse_service.py   # PDF absence excuse generator
 │   │   ├── git_sync_service.py # Multi-device repository sync (including favorites)
 │   │   ├── moodle_service.py   # Moodle scraping & REST API
@@ -109,7 +111,7 @@ Aufgaben Detector/
 │   │   ├── digi4school_service.py # Digi4School book downloader, OCR & TOC generator
 │   │   ├── teams_service.py    # Playwright MS Teams scraper
 │   │   ├── untis_service.py    # WebUntis JSON-RPC client
-│   │   └── update_service.py   # GitHub release update checker & semver engine
+│   │   └── update_service.py   # GitHub release update checker, in-app downloader & runner
 │   └── ui/                     # Presentation implementations
 │       ├── tui_app.py          # Interactive Textual TUI
 │       └── ui.py               # Rich terminal rendering utilities
