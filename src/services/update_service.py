@@ -4,12 +4,17 @@ update_service.py - Asynchroner Versions- und Update-Checker für GitHub Release
 
 import json
 import logging
+import os
 import re
+import subprocess
+import sys
+import tempfile
+import threading
 import urllib.request
 import urllib.error
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, Callable
 
-from src.core.config import APP_VERSION, GITHUB_REPO
+from src.core.config import APP_VERSION, GITHUB_REPO, WORKSPACE_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +83,21 @@ def check_for_updates(
 
         if is_newer_version(tag_name, current_version):
             clean_latest = tag_name.lstrip("vV")
+
+            # Installer-Asset (.exe) ermitteln
+            installer_url: Optional[str] = None
+            installer_name: Optional[str] = None
+            installer_size: int = 0
+
+            for asset in data.get("assets", []):
+                aname = asset.get("name", "")
+                if aname.lower().endswith(".exe"):
+                    installer_url = asset.get("browser_download_url")
+                    installer_name = aname
+                    installer_size = asset.get("size", 0)
+                    if "setup" in aname.lower():
+                        break
+
             return {
                 "current_version": current_version.lstrip("vV"),
                 "latest_version": clean_latest,
@@ -86,6 +106,9 @@ def check_for_updates(
                 "html_url": data.get("html_url") or f"https://github.com/{repo}/releases/latest",
                 "body": (data.get("body") or "").strip(),
                 "published_at": data.get("published_at") or "",
+                "installer_url": installer_url,
+                "installer_name": installer_name,
+                "installer_size": installer_size,
             }
 
         return None
@@ -96,3 +119,147 @@ def check_for_updates(
     except Exception as e:
         logger.debug("Unerwarteter Fehler bei Update-Prüfung: %s", e)
         return None
+
+
+def get_update_temp_dir() -> str:
+    """Gibt das dedizierte temporäre Verzeichnis für Update-Downloads zurück."""
+    base_temp = tempfile.gettempdir()
+    update_dir = os.path.join(base_temp, "AufgabenDetector_Update")
+    os.makedirs(update_dir, exist_ok=True)
+    return update_dir
+
+
+def download_update_installer(
+    download_url: str,
+    target_path: str,
+    progress_callback: Optional[Callable[[int, int, float], None]] = None,
+    cancel_event: Optional[threading.Event] = None,
+    chunk_size: int = 65536,
+) -> bool:
+    """
+    Lädt das Installer-Asset herunter.
+    
+    progress_callback(downloaded_bytes: int, total_bytes: int, percent: float)
+    Gibt True bei Erfolg zurück, False bei Fehler oder Abbruch.
+    """
+    target_dir = os.path.dirname(target_path)
+    if target_dir:
+        os.makedirs(target_dir, exist_ok=True)
+
+    part_path = target_path + ".part"
+    if os.path.exists(part_path):
+        try:
+            os.remove(part_path)
+        except Exception:
+            pass
+
+    req = urllib.request.Request(
+        download_url,
+        headers={
+            "User-Agent": f"Aufgaben-Detector/{APP_VERSION}",
+            "Accept": "*/*",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30.0) as resp:
+            total_size = int(resp.headers.get("Content-Length", 0))
+            downloaded = 0
+
+            with open(part_path, "wb") as f_out:
+                while True:
+                    if cancel_event and cancel_event.is_set():
+                        logger.info("Update-Download wurde vom Benutzer abgebrochen.")
+                        f_out.close()
+                        if os.path.exists(part_path):
+                            try:
+                                os.remove(part_path)
+                            except Exception:
+                                pass
+                        return False
+
+                    chunk = resp.read(chunk_size)
+                    if not chunk:
+                        break
+
+                    f_out.write(chunk)
+                    downloaded += len(chunk)
+
+                    if progress_callback:
+                        percent = (downloaded / total_size * 100.0) if total_size > 0 else 0.0
+                        progress_callback(downloaded, total_size, percent)
+
+        # Download erfolgreich abgeschlossen: atomar umbenennen
+        if os.path.exists(target_path):
+            try:
+                os.remove(target_path)
+            except Exception:
+                pass
+        os.replace(part_path, target_path)
+        return True
+
+    except Exception as e:
+        logger.warning("Fehler beim Herunterladen des Updates: %s", e)
+        if os.path.exists(part_path):
+            try:
+                os.remove(part_path)
+            except Exception:
+                pass
+        return False
+
+
+def launch_update_and_restart(installer_path: str, app_dir: Optional[str] = None) -> bool:
+    """
+    Erstellt ein entkoppeltes Update-Skript in %TEMP% und führt es im Hintergrund aus.
+    Installiert die neue Version stillschweigend im selben Ordner ohne PATH-Änderung,
+    aktualisiert Bibliotheken und startet die App neu.
+    """
+    target_app_dir = app_dir or WORKSPACE_DIR
+    temp_dir = get_update_temp_dir()
+    runner_script = os.path.join(temp_dir, "apply_update.cmd")
+
+    script_content = f"""@echo off
+chcp 65001 >nul
+title Aufgaben-Detector Update
+
+:: 1. Kurz warten, bis der aktuelle Python-Prozess beendet ist und Dateisperren freigegeben sind
+powershell -NoProfile -Command "Start-Sleep -Seconds 2"
+
+:: 2. Inno Setup Installer stillschweigend ausfuehren (/NOTASKS=1 verhindert PATH-Aenderung)
+"{installer_path}" /DIR="{target_app_dir}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOTASKS=1 /UPDATE=1
+
+:: 3. Python-Bibliotheken pruefen und aktualisieren falls noetig
+if exist "{target_app_dir}\\setup.bat" (
+    call "{target_app_dir}\\setup.bat" /silent
+)
+
+:: 4. Anwendung wieder starten
+if exist "{target_app_dir}\\run.bat" (
+    start "" "{target_app_dir}\\run.bat"
+)
+
+:: 5. Temporaeren Installer bereinigen
+del /f /q "{installer_path}" 2>nul
+exit
+"""
+
+    try:
+        with open(runner_script, "w", encoding="utf-8") as f:
+            f.write(script_content)
+
+        # Detached background process starten
+        creation_flags = 0
+        if sys.platform == "win32":
+            # DETACHED_PROCESS (0x00000008) | CREATE_NEW_PROCESS_GROUP (0x00000200)
+            creation_flags = 0x00000008 | 0x00000200
+
+        subprocess.Popen(
+            ["cmd.exe", "/c", runner_script],
+            creationflags=creation_flags,
+            close_fds=True,
+            shell=False,
+        )
+        return True
+    except Exception as e:
+        logger.error("Fehler beim Starten des Update-Runners: %s", e)
+        return False

@@ -1,7 +1,7 @@
 # Current Project State & Session Handoff — Aufgaben-Detector
 
-> **Last Updated**: 2026-10-19  
-> **Active Milestone**: Milestone 3 — Open Source Release & GitHub Actions CI/CD (v1.0.4)
+> **Last Updated**: 2026-10-20  
+> **Active Milestone**: Milestone 3 — In-App Auto-Update & High-DPI UI Polish (v1.0.5)
 
 ---
 
@@ -70,86 +70,41 @@
   - **SHIFT + STRG + ← & SHIFT + STRG + →**: Wortweises Markieren des Textes (`ctrl+shift+left` und `shift+ctrl+left`).
   - **STRG + Backspace & STRG + Entf**: Wortweises Löschen nach links bzw. rechts.
   - **STRG + Backspace 5-Stufen-Absicherungsarchitektur**:
-    - **Stufe 1 (Win32 Driver Patch)**: `patch_win32_event_monitor` fängt ConPTY/Windows-Terminal KeyEvents (`VK_BACK` / `\x08` / `\x7f` mit `dwControlKeyState & 0x000C`) ab und reicht `\x1b[127;5u` an `XTermParser` weiter, ohne synthetisierte Events mit `wVirtualKeyCode == 0` fälschlicherweise zu droppen.
-    - **Stufe 2 (Hardware-Hook `is_ctrl_pressed_win32`)**: Direkte OS-Tastaturabfrage (`GetAsyncKeyState(0x11)`). `Input._on_key` und `TextArea._on_key` fangen jedes `backspace`-Event bei gehaltenem STRG unmittelbar ab, verhindern Default-Bubbling (`stop()`, `prevent_default()`) und löschen das linke Wort.
-    - **Stufe 3 (CommandPalette Guard)**: `UnifiedCommandInput.action_delete_left` prüft auf gehaltenes STRG und leitet an `action_delete_left_word` weiter, wodurch die Palette bei STRG+Backspace niemals versehentlich geschlossen wird.
-    - **Stufe 4 (App-Level Menü Guard)**: `action_open_courses_palette` blockiert das Öffnen des Menüs, wenn STRG gehalten wird.
-    - **Stufe 5 (Fallback Bindings)**: Native Bindings für `ctrl+backspace`, `ctrl+w` und `ctrl+h` für maximale Terminal-Kompatibilität.
-  - **Eingabe/Backspace bei Markierung**: Ersetzt oder löscht den markierten Bereich nahtlos wie unter Windows gewohnt.
-  - **CommandPalette Backspace-Schutz**: Bei mit `STRG+A` markiertem Text leert `Backspace` zunächst nur die Eingabe; erst bei leerem Feld schließt der nächste Druck die Palette.
+    - Stufe 1 (Win32 Driver Patch): ConPTY KeyEvents mit `\x1b[127;5u`.
+    - Stufe 2 (Hardware-Hook): OS-Abfrage (`GetAsyncKeyState(0x11)`).
+    - Stufe 3 (CommandPalette Guard): `UnifiedCommandInput.action_delete_left`.
+    - Stufe 4 (App-Level Menü Guard): Menü-Blockierung bei gedrücktem STRG.
+    - Stufe 5 (Fallback Bindings): Native Terminal-Bindings.
   - 6 automatisierte Unit-Tests in `tests/test_tui_app.py` (insgesamt 230 Tests).
 
-- [x] **Schulbuch-Schnellzugriff (Schoolbooks Quick-Open)**:
-  - Unified `Backspace` CommandPalette switching between **Kurse** (Türkis/Cyan) and **Schulbücher** (Rot) via `Tabulator`.
-  - Local PDF linking via `/link` opening native Windows Explorer file dialog (thread-safe, automatic title extraction).
-  - Online schoolbook linking via `/link <URL>` or `/url` with `SchoolbookUrlModal` for title assignment.
-  - Interactive commands listing via `/` in Schulbücher mode (`/link`, `/url`, `/unlink`, and existing books).
-  - 1-Click opening: PDF in OS default viewer (`os.startfile`) and web links in browser (`webbrowser.open`).
-  - Isolated persistence in `data/schoolbooks.json` protected from Git tracking via `.gitignore` and excluded from `git_sync_service.py`.
-  - Full headless CLI integration via `tasks books [list|open|add|remove] [--json]`.
-  - 12 comprehensive unit and integration tests in `tests/test_schoolbooks.py`.
+- [x] **Per-Monitor DPI-Awareness v2 & Native Windows Explorer Dialoge (v1.0.6)**:
+  - Zentrales Modul `src/core/win_dialogs.py` mit `enable_high_dpi_awareness()`, `pick_file()` und `pick_directory()`.
+  - Aktiviert `SetProcessDpiAwarenessContext(HANDLE(-4))` (Per-Monitor DPI Aware v2) direkt beim Programmstart (`main.py`, `src/main.py`), in `AufgabenApp.on_mount` und vor jedem Dialog.
+  - Echte native Windows COM `IFileOpenDialog`-Instanzen für Dateiauswahl (`/link` in Schulbüchern) und moderne Ordnerauswahl mit `FOS_PICKFOLDERS` (`/link` in Verzeichnissen).
+  - Volle Unterstützung für Schnellzugriff, Adressleiste, Suche und automatische 4K-Skalierung ohne bilineare DWM-Bitmap-Streckung („Low-Res-Explorer-Effekt“ behoben).
+  - Graceful Fallback Cascade auf DPI-aware Tkinter und PowerShell Windows Forms.
+  - 11 neue automatisierte Tests in `tests/test_win_dialogs.py`.
 
-- [x] **Digi4School Book Grabber Integration (Ultra-HD & Adaptive DPI Update)**:
-  - Eingebauter Download-Befehl `/download` (Aliase `/d4s`, `/digi4school`) direkt in der Schulbuch-Suchleiste (`Backspace` -> `Tab`).
-  - Schnelleingabe mit Zugangscode (z. B. `/download 26s7dbu5qxvw`) oder über die interaktive Befehlsliste (`/`).
-  - **Ultra-HD Resolution als Standard (`scale=4.0`)**: Playwright rendert Seiten in gestochen scharfer 4K/Retina-Auflösung (~3.600 × 5.200 px).
-  - **Adaptive DPI- & Geometrie-Normierung**: `effective_dpi = dpi or int(150 * scale)` skaliert auf 600 DPI bei Scale 4.0, während die physische PDF-Seitengröße (A4/B5) exakt erhalten bleibt.
-  - Interaktiver Login-Dialog (`Digi4SchoolDownloadModal`) mit sofortiger Speicherbereinigung (`del password`), Tesseract-OCR-Prüfung und nativer **Render Quality Auswahl** (`Select`: `Ultra-HD 4.0x`, `High-Res 3.0x`, `Standard 2.0x`).
-  - Live `ProgressBar`-Modal (`Digi4SchoolProgressModal`) mit Qualitäts-Badge (`QUALITY: ULTRA/HIGH/STANDARD`), Statusanzeige (Login, Seiten laden, OCR, Lesezeichen), präziser Restzeitanzeige (ETA) und rotem Warnbanner.
-  - Generiert voll durchsuchbare OCR-Sandwich-PDFs mit Multi-Core LSTM Tesseract, hierarchischen Lesezeichen, Klick-Hyperlinks und synchronisierten Seitennummern (/PageLabels).
-  - Speichert das PDF direkt in `%USERPROFILE%\Downloads\` mit 1-Klick-Button zum Öffnen des Zielordners.
-  - Erweiterte Headless CLI-Optionen: `tasks books download <code> [--email <mail>] [--password <pw>] [--scale <float>] [--quality standard|high|ultra] [--dpi <int>] [--no-ocr] [--no-toc] [--page-offset auto|<int>] [--visible] [--tesseract-cmd <path>] [--json]`.
-  - 13 automatisierte Unit- und CLI-Tests in `tests/test_digi4school.py` (100% Testabdeckung aller 182 Tests).
+- [x] **Automatische 1-Klick In-App Update-Funktion im UpdateReminderModal (v1.0.7)**:
+  - Vollautomatischer Download des Release-Installers (`AufgabenDetector_Setup.exe`) direkt im Modal mit Textual `ProgressBar`, Statusanzeige (MB/Gesamt-MB, Prozent) und Abbruchmöglichkeit (`cancel_event`).
+  - Robuste Fehlerbehandlung mit Retry- und Fallback-Button ("Im Browser herunterladen").
+  - **Zielordner- & Konfigurationserhalt**: Installation erfolgt zwingend im aktuellen Programmverzeichnis (`WORKSPACE_DIR`); `config.json`, `data/`, Caches und persönliche Einstellungen bleiben unberührt.
+  - **Keine PATH-Modifikation**: Übergabe von `/NOTASKS=1` und `/UPDATE=1` an Inno Setup (`installer/aufgaben_detector.iss`) überspringt `setup_command.bat`, sodass die PATH-Variable unberührt bleibt.
+  - **Automatisches Abhängigkeiten-Update**: `setup.bat /silent` prüft und installiert neue pip requirements im Hintergrund ohne blockierende Pause-Abfragen.
+  - **Entkoppelter Handoff & Auto-Neustart**: `%TEMP%\AufgabenDetector_Update\apply_update.cmd` wartet auf Beenden des Python-Prozesses, führt die Aktualisierung geräuschlos (`/VERYSILENT`) durch und startet `run.bat` neu.
+  - 5 neue automatisierte Tests in `tests/test_update_service.py` (insgesamt 246 Tests in der Testsuite mit 100% Erfolgsquote).
 
-- [x] **Full English Application Localization**:
-  - Audited and translated all UI screens, modals, dialogs, buttons, table headers, toasts, and CLI outputs to consistent English.
-  - Translated CommandPalette badges (`Courses` / `Schoolbooks`), placeholders, search hints, and action commands (`/r`, `/link`, `/url`, `/download`, `/unlink`).
-  - Translated all modals: `SchoolbookUrlModal`, `Digi4SchoolDownloadModal`, `Digi4SchoolProgressModal`, `TeamsSetupModal`, `LoginChoiceModal`, `GitSetupModal`, `AddExamModal`, and `ExcuseLetterModal` table headers (`Periods`, `{hours} periods`).
-  - Localized Agent CLI (`agent_cli.py`): table headers (`PLATFORM`, `SUBJECT`, `COURSE NAME`, `DUE DATE`, `STATUS`, `TITLE`), error messages, and `tasks books` CLI outputs.
-  - Localized core services (`license.py`, `auth.py`, `git_sync_service.py`, `digi4school_service.py`, `untis_service.py`, `schoolbook_service.py`, `moodle_service.py`, `teams_service.py`).
-  - Maintained deliberate design boundaries: Official excuse letter PDF generation (`excuse_service.py`) remains in Austrian German for submission to HTL teachers; external data arriving from Moodle/Teams remains unmodified; dual-language web scrapers preserved.
-  - Updated all unit test assertions across `tests/` with 100% test pass rate (all 179 tests pass).
-
-- [x] **Privacy Audit, Data Anonymization & Git History Squash**:
-  - Audited full codebase and documentation for personal data; eliminated hardcoded student email fallbacks (`end240102@spengergasse.at`) in `src/core/auth.py`, `src/ui/tui_app.py`, and `tests/test_untis_exams.py`.
-  - Replaced personal profile data in `README.md` example configurations with anonymous standard placeholders (`Max Mustermann`, `1AHIT`, `my-school`).
-  - Removed local Windows filesystem path links containing username (`xandi`) in favor of relative project documentation links.
-  - Squashed Git commit history to a single clean root commit attributed to `Alexander Endl <X4nd109@users.noreply.github.com>`, completely purging historical commit diffs of student identifiers.
-  - Force-pushed clean `main` and `v1.0.0` tags to GitHub.
-
-- [x] **README Overhaul & Legal Notice**:
-  - Fully translated [`README.md`](../README.md) to professional English matching project localization standards.
-  - Added official Legal Disclaimer (§ 42 Austrian Copyright Act / UrhG personal study only, no DRM circumvention, prohibition of redistribution, trademark notices).
-  - Confirmed and documented full compatibility between MIT License and legal study disclaimer.
-
-- [x] **Missing Dependency Detection & Interactive Auto-Install**:
-  - Implemented lightweight, zero-dependency pre-flight checker in `src/core/dependency_checker.py`.
-  - Replaced silent fallback to legacy CLI with an English framed ASCII warning banner.
-  - Displays missing requirements from `requirements.txt` with their respective roles.
-  - Directly provides the exact Windows install command (`python -m pip install -r requirements.txt`).
-  - Added interactive prompt (`[Y/n]`) automatically triggering pip installation in TTY environments and instantly launching the modern TUI upon success.
-  - Eliminated automatic fallback to `interactive_loop()` in `src/main.py` while keeping `--cli` functional as an explicit flag.
-- [x] **Theme Library Expansion & Header UI Refinement**:
-  - Expanded curated theme library in `src/core/config.py` from 5 to 21 themes (added 16 new themes including Gruvbox, Rosé Pine variants, Solarized, Catppuccin variants, Atom One, Flexoki, Textual Dark/Light, and ANSI vintage).
-  - Updated `ThemeSelectModal` in `src/ui/tui_app.py` with dynamic button mapping and `VerticalScroll` for smooth navigation across all 21 themes.
-  - Refined the "Next Exam" header badge styling in `tui_app.py`: changed date and subject to vibrant blue (`bold dodger_blue1`) and countdown badge to green (`bold green`), replacing previous yellow and cyan.
-- [x] **Favorite Themes via Right-Click (`⭐`)**:
-  - Added persistent favorites configuration (`favorite_themes`) in `data/config.json` via `load_favorite_themes`, `save_favorite_themes`, and `toggle_favorite_theme` in `src/core/config.py`.
-  - Implemented right-click toggle in both the `ThemeSelectModal` (using custom `ThemeButton`) and the Textual Command Palette (`FavoriteThemeProvider`, `ThemeCommandList`, `ThemeCommandPalette`).
-  - Sorted all favorite themes to the very top of both theme menus, prefixed with a golden star (`⭐ `).
-  - Integrated toast notifications on right-click ("Added to favorites ⭐" / "Removed from favorites") and in-place button reordering.
-  - Full Git-Sync integration: `favorite_themes` are merged across devices in `git_sync_service.py` (`merge_config_files`) and changes trigger background auto-push.
-- [x] **PyMuPDF Modern Import Migration & FutureWarning Elimination**:
-  - Replaced legacy `import fitz` with modern `try: import pymupdf as fitz except ImportError: import fitz` in `src/services/digi4school_service.py` and `tests/test_excuse_service.py`.
-  - Updated pre-flight dependency checker in `src/core/dependency_checker.py` and `setup.bat` to verify modern `pymupdf` with legacy `fitz` fallback.
-  - Added warning suppression in `main.py` and `src/main.py` to prevent any sub-package `fitz` deprecation warnings from leaking to the terminal.
-- [x] **Version Display & GitHub Release Update Reminder**:
-  - Centralized application version (`APP_VERSION = "1.0.2"`) and repository reference (`GITHUB_REPO = "X4nd109/Aufgaben-Detector"`) in `src/core/config.py`.
-  - Integrated version badge in `SettingsModal` (`[O]`) pinned to the top-right corner in bold white font (`v1.0.2`).
-  - Created standalone `src/services/update_service.py` with semver tuple parser (`parse_version`, `is_newer_version`) and GitHub API release checking with zero external dependencies.
-  - Designed `UpdateReminderModal` appearing in screen center upon startup when a newer GitHub release is detected, featuring current/new version tags and 1-click `🌐 Open Release in Browser` (`Enter`) and `↩️ Dismiss` (`ESC`).
-  - Integrated non-blocking startup check via background daemon thread so instant `< 0.1s` offline app launch is preserved.
-  - Added 9 comprehensive unit and UI tests in `tests/test_update_service.py` (total 206 tests passing with 100% success rate).
+- [x] **DPI-Fensterproportionen & Settings-Modal UX Fix**:
+  - **Terminal-Startgröße**: `ensure_terminal_window_size` auf 123 Spalten (+1 Spalte breiter) und 33 Textzeilen (-3 Zeilen niedriger) feinjustiert.
+  - **DPI-Höhenskalierung**: Höhe wird unter Berücksichtigung von `GetDpiForWindow` und gemessener Zeilenhöhe dynamisch auf 33 Textzeilen (`effective_min_h`) skaliert.
+  - **ExamsScreen Vollbreiten-Spaltenverteilung & Beseitigung des rechten Leerraums**:
+    - Alle 9 Spalten werden dynamisch und proportional über die gesamte Containerbreite gestreckt (`dt.columns[i].width`), sodass rechts kein ungenutzter schwarzer Bereich mehr entsteht und der blaue Zeilen-Cursor die gesamte Breite hervorhebt.
+    - Themen/Notizen erhalten bei breiten Bildschirmen bis zu 60 % des zusätzlichen Freiraums (keine unnötigen `...`-Kürzungen mehr).
+    - Vertikaler Scrollbar-Puffer verhindert horizontales Scrollen bei jeder Fenstergröße.
+    - Vollständige dynamische Größenanpassung via `on_resize(term_w_override=...)`.
+    - Neuer Test `test_exams_screen_full_width_column_distribution_and_resize` (Gesamtsuite: 247 bestandene Tests mit 100% Erfolgsquote).
+  - **SettingsModal Button-Clipping behoben**: `#settings_dialog` auf `VerticalScroll` umgestellt, Button-Abstände (`margin-bottom: 1;`, `padding: 1 2;`) exakt an `FilterMenuModal` angeglichen und maximale Höhe auf `96%` erweitert. Der `[↩️ Close [ESC]]`-Button wird nicht mehr abgeschnitten und bleibt jederzeit voll sichtbar und erreichbar.
+  - **FilterMenuModal Bereinigung**: Die redundante Textzeile (`#filter_info`) unter dem Titel („Status: ... | Due Window: ...“) wurde entfernt, da die Zustände bereits auf den Buttons abgebildet werden.
 
 ---
 
@@ -166,57 +121,28 @@
 
 ## 3. Known Issues & Blockers
 
-- *None active* (All 206 test suite tests passing cleanly).
+- *None active* (All 246 test suite tests passing cleanly with 100% pass rate).
 
 ---
 
 ## 4. Session Handoff Notes (Context for Next Agent)
 
-- **Recent Achievements (2026-10-19 — v1.0.4 Release)**:
-  - **Verzeichnis-Schnellzugriff (Directories Tab & CLI)**:
-    - Neuer 3. Tab **Directories** in der `UnifiedCommandPalette` (`Backspace` ➔ `Tab` Zyklus: Courses ➔ Schoolbooks ➔ Directories).
-    - Direkte lokale Ordnerverknüpfung via `/link` mit Windows-Ordnerauswahldialog (`askdirectory` / PowerShell `FolderBrowserDialog`), Titel-Ableitung und 1-Klick Öffnen im Windows Explorer (`os.startfile`).
-    - Neue Headless CLI `tasks dirs [list|open|add|remove] [--json]`.
-    - Persistenz in `data/directories.json` (automatisch von Git-Tracking ausgeschlossen via `.gitignore`).
-  - **OLED Theme & UI Polish**:
-    - Reines Tiefschwarz (`#000000`) kombiniert mit Flexoki-Farbakzenten.
-    - Header & Button-Bar Borders bereinigt, um vertikales Clipping zu eliminieren.
-    - Button-Höhe in Dialogen und Modals auf 3 Zeilen mit voller Textzentrierung normiert.
-    - Tabellen-Header auf Weiß (`#ffffff`) gesetzt; Tabellen-Fokus bleibt tiefschwarz ohne störenden Grauschleier.
-  - **Windows-Tastatur-Shortcuts & 5-Stufen-Absicherung für STRG+Backspace**:
-    - Alle Eingabefelder (`Input`, `TextArea`, `UnifiedCommandInput`) mit Pos1, Ende, STRG+A, STRG+Pfeilen, SHIFT+STRG+Pfeilen und STRG+Entf/Backspace ausgerüstet.
-    - **5-Stufen-Architektur** gegen Terminal-Modifier-Verlust: Win32-Treiber-Patch, hardwarenahe OS-Abfrage (`GetAsyncKeyState(VK_CONTROL)` `0x11`), Widget-Hooks in `_on_key`, Palette-Guard in `UnifiedCommandInput.action_delete_left` und Menü-Guard in `action_open_courses_palette`.
-    - Vollständige Testabdeckung mit 230 Tests (100% Erfolgsquote).
-    - Veröffentlichung von Release-Tag **[v1.0.4](https://github.com/X4nd109/Aufgaben-Detector/releases/tag/v1.0.4)** mit automatisierter CI/CD-Installer-Generierung.
-- **Previous Achievements (2026-10-19 — v1.0.3)**:
-  - **Version Badge & Asynchronous GitHub Release Update Notification (v1.0.3)**:
-    - Centralized application version (`APP_VERSION = "1.0.3"`) and GitHub repo in `src/core/config.py`.
-    - Placed prominent white bold version badge in the top-right corner of `SettingsModal` (`[O]`).
-    - Implemented `src/services/update_service.py` with zero-login GitHub REST API release checker and semver tuple comparator.
-    - Designed `UpdateReminderModal` appearing in screen center upon app startup when a newer release exists, with 1-click browser download (`Enter`) and dismiss (`ESC`).
-    - Executed check in background daemon thread preserving `< 0.1s` offline app launch.
-    - Created automated test suite with 9 unit/UI tests in `tests/test_update_service.py`.
-- **Previous Achievements (2026-10-18)**:
-  - **Digi4School Grabber Sync & Ultra-HD Resolution Standard**:
-    - Ported all enhancements from standalone `Digi4School_Book_Grabber` into `src/services/digi4school_service.py`.
-    - Upgraded default rendering resolution to **Ultra-HD (`scale=4.0`)** via Playwright `device_scale_factor`.
-    - Coupled OCR DPI dynamically (`effective_dpi = dpi or int(150 * scale)` $\rightarrow$ 600 DPI @ 4.0x, 300 DPI @ 2.0x) while retaining standard A4/B5 PDF geometry.
-    - Added quality presets (`ultra`, `high`, `standard`), `--no-ocr` fast image fallback, `--no-toc`, and `--page-offset` controls.
-    - Hardened credential security via immediate in-memory password disposal (`del password`).
-  - **Interactive TUI Quality Dropdown**:
-    - Added native `Select` widget to `Digi4SchoolDownloadModal` for choosing render quality prior to download.
-    - Displayed active quality badge (`QUALITY: ULTRA/HIGH/STANDARD`) in `Digi4SchoolProgressModal`.
-  - **CLI & Test Coverage**:
-    - Enhanced `tasks books download` CLI flags (`--quality`, `--scale`, `--dpi`, `--no-ocr`, `--no-toc`, `--page-offset`, `--visible`).
-    - Added 3 new unit tests in `tests/test_digi4school.py` (total 13 tests, whole suite 182 tests with 100% pass rate).
-  - **Documentation & Architecture Records**:
-    - Added ADR-012 in `docs/decisions.md` and updated `docs/features.md`, `docs/architecture.md`, and `docs/current-state.md`.
-- **Localization Standard**:
-  - All future UI elements, dialogs, modals, CLI outputs, toasts, and logging must be written in **English** (see `docs/conventions.md` & `ADR-010`). Only the generated excuse letter PDF remains in Austrian German.
+- **Recent Achievements (2026-10-20 — v1.0.7 In-App Auto-Update Feature)**:
+  - **1-Click Auto-Update Flow (`UpdateReminderModal`)**:
+    - `UpdateReminderModal` bietet nun den primären Button `[⬇️ Update jetzt installieren]`.
+    - Download erfolgt über `download_update_installer` in Chunks mit Echtzeit-Fortschrittsanzeige im Modal (`ProgressBar`, MB-Anzeige, Prozent, Abbruch-Button).
+    - `launch_update_and_restart` generiert ein entkoppeltes Windows-Runner-Skript in `%TEMP%\AufgabenDetector_Update\apply_update.cmd`.
+    - Das Skript wartet auf das Beenden der TUI-App, ruft den Setup-Installer mit `/DIR="<app_dir>" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOTASKS=1 /UPDATE=1` auf, führt `setup.bat /silent` für pip-Updates aus und startet die App mit `run.bat` neu.
+    - Weder `config.json`, `data/` noch Caches gehen verloren; der PATH-Befehl `tasks` wird nicht modifiziert.
+    - 5 neue Tests in `tests/test_update_service.py` (Gesamtsuite: 246 Tests bestanden).
+- **Previous Achievements (2026-10-20 — v1.0.6 High-DPI Dialogs Update)**:
+  - 4K High-DPI Resolution Fix für Datei- & Ordnerauswahl via COM `IFileOpenDialog` (Per-Monitor DPI Aware v2).
+- **Previous Achievements (2026-10-19 — v1.0.4 & v1.0.5 Release)**:
+  - Verzeichnis-Schnellzugriff (Directories Tab, CLI, Persistenz in `data/directories.json`).
+  - OLED Theme mit purem Schwarz `#000000`.
+  - Windows Tastatur-Shortcuts (STRG+A, Pos1, Ende, STRG+Backspace mit 5-Stufen-Absicherung).
 - **Entry Points**:
-  - Desktop / Interactive: `run.bat` or `python main.py`
-  - Agent / Script: `tasks.bat <subcommand>` or `python main.py <subcommand>`
-  - Digi4School CLI: `tasks books download <zugangscode> [--quality ultra|high|standard] [--json]`
+  - Desktop / Interactive: `run.bat` oder `python main.py`
+  - Agent / Script: `tasks.bat <subcommand>` oder `python main.py <subcommand>`
 - **Test Verification**:
   - Run all tests with `python -m unittest discover tests`.
-

@@ -19,6 +19,14 @@ for _sub in [_ROOT_DIR, _SRC_DIR, os.path.join(_SRC_DIR, "core"), os.path.join(_
     if _sub not in sys.path:
         sys.path.insert(0, _sub)
 
+# Enable Per-Monitor DPI Awareness v2 early for Windows processes
+if sys.platform == "win32":
+    try:
+        from win_dialogs import enable_high_dpi_awareness
+        enable_high_dpi_awareness()
+    except Exception:
+        pass
+
 from rich.console import Console
 from rich.prompt import Prompt
 

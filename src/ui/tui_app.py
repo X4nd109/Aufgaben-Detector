@@ -405,9 +405,19 @@ except ImportError:
     from src.services.digi4school_service import Digi4SchoolService, find_tesseract
 
 try:
-    from update_service import check_for_updates
+    from update_service import (
+        check_for_updates,
+        download_update_installer,
+        launch_update_and_restart,
+        get_update_temp_dir,
+    )
 except ImportError:
-    from src.services.update_service import check_for_updates
+    from src.services.update_service import (
+        check_for_updates,
+        download_update_installer,
+        launch_update_and_restart,
+        get_update_temp_dir,
+    )
 
 from auth import (
     check_teams_session,
@@ -420,6 +430,7 @@ from auth import (
 )
 from config import (
     APP_VERSION,
+    WORKSPACE_DIR,
     ALLOWED_THEMES,
     CONFIG_DIR,
     DEFAULT_THEME,
@@ -544,11 +555,12 @@ def get_windows_console_window_size() -> Optional[tuple[int, int]]:
     return None
 
 
-def ensure_terminal_window_size(target_cols: int = 136, min_height_px: int = 750) -> None:
+def ensure_terminal_window_size(target_cols: int = 123, min_height_px: int = 680) -> None:
     """
     Sorgt dafür, dass das Terminal-Fenster (Windows Terminal oder Console Host)
     beim Start auf mindestens target_cols Spalten und eine passende Mindesthöhe
     skaliert wird, ohne dass es zu Render-Desyncs in Textual / ConPTY kommt.
+    Berücksichtigt Per-Monitor DPI Awareness v2 für gestochen scharfe, proportionale Skalierung.
     """
     if os.name != "nt" or sys.platform != "win32":
         return
@@ -561,7 +573,7 @@ def ensure_terminal_window_size(target_cols: int = 136, min_height_px: int = 750
         win_size = get_windows_console_window_size()
         cur_cols = win_size[0] if win_size else 0
         cur_lines = win_size[1] if win_size else 0
-        target_lines = max(cur_lines, 35)
+        target_lines = max(cur_lines, 33)
 
         # 2. Direkte Win32-Konsolenpuffer-Anpassung via CONOUT$ (für conhost / Standard-Konsole)
         class COORD(ctypes.Structure):
@@ -677,24 +689,44 @@ def ensure_terminal_window_size(target_cols: int = 136, min_height_px: int = 750
         if hwnd_target:
             global _CACHED_TERMINAL_HWND
             _CACHED_TERMINAL_HWND = hwnd_target
+
+            # DPI des Fensters ermitteln für proportionale Skalierung
+            dpi = 96
+            try:
+                if hasattr(user32, "GetDpiForWindow"):
+                    d = user32.GetDpiForWindow(hwnd_target)
+                    if d and d > 0:
+                        dpi = d
+            except Exception:
+                pass
+            dpi_scale = max(1.0, dpi / 96.0)
+
             rect = wintypes.RECT()
             if user32.GetWindowRect(hwnd_target, ctypes.byref(rect)):
                 cur_w = rect.right - rect.left
                 cur_h = rect.bottom - rect.top
 
-                col_width_px = 10.0
+                col_width_px = 9.5 * dpi_scale
                 if win_size and win_size[0] > 0:
                     measured = (cur_w - 40) / win_size[0]
-                    if 7.0 <= measured <= 24.0:
+                    if 6.0 <= measured <= 36.0:
                         col_width_px = measured
 
-                min_width_px = int(target_cols * col_width_px + 48)
+                line_height_px = 22.0 * dpi_scale
+                if win_size and win_size[1] > 0:
+                    measured_h = (cur_h - 50) / win_size[1]
+                    if 12.0 <= measured_h <= 54.0:
+                        line_height_px = measured_h
+
+                min_width_px = int(target_cols * col_width_px + 40)
+                # Mindestens 33 Textzeilen hoch skalieren
+                effective_min_h = max(int(min_height_px * dpi_scale), int(target_lines * line_height_px + 50))
 
                 max_screen_w = user32.GetSystemMetrics(0)  # SM_CXSCREEN
                 max_screen_h = user32.GetSystemMetrics(1)  # SM_CYSCREEN
 
                 target_w = min(max(cur_w, min_width_px), max(max_screen_w - 40, 800))
-                target_h = min(max(cur_h, min_height_px), max(max_screen_h - 60, 600))
+                target_h = min(max(cur_h, effective_min_h), max(max_screen_h - 60, 600))
 
                 if cur_w < target_w or cur_h < target_h:
                     x = rect.left
@@ -1589,11 +1621,6 @@ class FilterMenuModal(ModalScreen[Optional[str]]):
         margin-bottom: 1;
         color: #89b4fa;
     }
-    #filter_info {
-        text-align: center;
-        color: #a6adc8;
-        margin-bottom: 1;
-    }
     .filter_btn {
         width: 100%;
         margin-bottom: 1;
@@ -1650,11 +1677,6 @@ class FilterMenuModal(ModalScreen[Optional[str]]):
                 "8_weeks": "8 Weeks",
                 "all": "All",
             }.get(self.current_timeframe, self.current_timeframe)
-
-            yield Label(
-                f"Status: [bold cyan]{st_disp}[/] | Due Window: [bold cyan]{tf_disp}[/] | Subject: [bold cyan]{subj_disp}[/] | Platform: [bold cyan]{plat_disp}[/]",
-                id="filter_info",
-            )
 
             yield Button(f"⚡ Status Filter: {st_disp}", id="btn_filter_status", classes="filter_btn", variant="primary", tooltip="Status Filter [1]")
             yield Button(f"⏳ Max Duration: {tf_disp}", id="btn_filter_timeframe", classes="filter_btn", variant="success", tooltip="Max Duration Filter [2]")
@@ -2782,14 +2804,14 @@ class Digi4SchoolProgressModal(ModalScreen[Optional[dict]]):
 
 
 class UpdateReminderModal(ModalScreen[None]):
-    """Modal dialog notifying the user about a newer GitHub release."""
+    """Modal dialog notifying the user about a newer GitHub release with 1-click auto-update."""
 
     DEFAULT_CSS = """
     UpdateReminderModal {
         align: center middle;
     }
     #update_dialog {
-        width: 64;
+        width: 68;
         max-height: 85%;
         height: auto;
         border: thick #a6e3a1;
@@ -2818,25 +2840,62 @@ class UpdateReminderModal(ModalScreen[None]):
         margin-bottom: 1;
         color: #cdd6f4;
     }
-    #update_buttons_row {
+    #update_progress_box {
+        width: 100%;
+        height: auto;
+        border: solid #45475a;
+        background: #181825;
+        padding: 1 2;
+        margin-bottom: 1;
+        display: none;
+    }
+    #update_pbar {
+        width: 100%;
+        margin-bottom: 1;
+    }
+    #update_status_lbl {
+        text-align: center;
+        color: #89b4fa;
+        text-style: bold;
+        margin-bottom: 0;
+    }
+    #update_error_box {
+        width: 100%;
+        height: auto;
+        border: solid #f38ba8;
+        background: #181825;
+        padding: 1 2;
+        margin-bottom: 1;
+        display: none;
+    }
+    #update_error_lbl {
+        color: #f38ba8;
+        text-align: center;
+        text-style: bold;
+    }
+    #update_buttons_row, #update_download_buttons_row, #update_error_buttons_row {
         height: auto;
         width: 100%;
         align: center middle;
         margin-top: 1;
     }
-    #btn_update_open {
-        margin-right: 2;
+    #update_download_buttons_row, #update_error_buttons_row {
+        display: none;
+    }
+    .update_btn {
+        margin: 0 1;
     }
     """
 
     BINDINGS = [
-        Binding("enter", "open_release", "Open Release", show=False),
         Binding("escape", "dismiss_modal", "Dismiss"),
     ]
 
     def __init__(self, update_info: Dict[str, Any]) -> None:
         super().__init__()
         self.update_info = update_info
+        self._cancel_event: Optional[threading.Event] = None
+        self._is_downloading: bool = False
 
     def compose(self) -> ComposeResult:
         cur_v = self.update_info.get("current_version", APP_VERSION)
@@ -2844,20 +2903,174 @@ class UpdateReminderModal(ModalScreen[None]):
         rel_name = self.update_info.get("name") or f"v{lat_v}"
 
         with Vertical(id="update_dialog"):
-            yield Label("🚀 New Version Available!", id="update_title")
+            yield Label("🚀 Neue Version verfügbar!", id="update_title")
             with Vertical(id="update_info_box"):
-                yield Label(f"Current Version: [bold white]v{cur_v}[/]", classes="update_version_line")
-                yield Label(f"New Version:     [bold #a6e3a1]v{lat_v}[/] ({escape(rel_name)})", classes="update_version_line")
-            yield Label("A newer release is ready on GitHub with updates and fixes.", id="update_hint")
+                yield Label(f"Aktuelle Version: [bold white]v{cur_v}[/]", classes="update_version_line")
+                yield Label(f"Neueste Version:  [bold #a6e3a1]v{lat_v}[/] ({escape(rel_name)})", classes="update_version_line")
+
+            yield Label("Ein neueres Release mit Verbesserungen und Fixes steht auf GitHub bereit.", id="update_hint")
+
+            with Vertical(id="update_progress_box"):
+                yield ProgressBar(total=100, show_eta=False, show_percentage=True, id="update_pbar")
+                yield Label("Initialisiere Download...", id="update_status_lbl")
+
+            with Vertical(id="update_error_box"):
+                yield Label("", id="update_error_lbl")
+
             with Horizontal(id="update_buttons_row"):
-                yield Button("🌐 Open Release in Browser", id="btn_update_open", variant="success")
-                yield Button("↩️ Dismiss [ESC]", id="btn_update_dismiss", variant="default")
+                yield Button("⬇️ Update jetzt installieren", id="btn_update_install", variant="success", classes="update_btn")
+                yield Button("🌐 Im Browser ansehen", id="btn_update_open", variant="default", classes="update_btn")
+                yield Button("Später [ESC]", id="btn_update_dismiss", variant="default", classes="update_btn")
+
+            with Horizontal(id="update_download_buttons_row"):
+                yield Button("❌ Abbrechen", id="btn_update_cancel", variant="error", classes="update_btn")
+
+            with Horizontal(id="update_error_buttons_row"):
+                yield Button("🔄 Erneut versuchen", id="btn_update_retry", variant="primary", classes="update_btn")
+                yield Button("🌐 Im Browser herunterladen", id="btn_update_fallback", variant="success", classes="update_btn")
+                yield Button("Schließen [ESC]", id="btn_update_error_close", variant="default", classes="update_btn")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn_update_open":
+        bid = event.button.id
+        if bid in ("btn_update_install", "btn_update_retry"):
+            self.action_start_install()
+        elif bid in ("btn_update_open", "btn_update_fallback"):
             self.action_open_release()
-        elif event.button.id == "btn_update_dismiss":
-            self.dismiss()
+        elif bid == "btn_update_cancel":
+            self.action_cancel_download()
+        elif bid in ("btn_update_dismiss", "btn_update_error_close"):
+            self.action_dismiss_modal()
+
+    def action_start_install(self) -> None:
+        if self._is_downloading:
+            return
+
+        installer_url = self.update_info.get("installer_url")
+        if not installer_url:
+            self._show_error(
+                "Kein Installer-Paket (.exe) in diesem Release gefunden.\n"
+                "Bitte lade das Update manuell über den Browser herunter."
+            )
+            return
+
+        # UI in Download-Zustand versetzen
+        try:
+            self.query_one("#update_hint", Label).styles.display = "none"
+            self.query_one("#update_error_box", Vertical).styles.display = "none"
+            self.query_one("#update_progress_box", Vertical).styles.display = "block"
+            self.query_one("#update_buttons_row", Horizontal).styles.display = "none"
+            self.query_one("#update_download_buttons_row", Horizontal).styles.display = "block"
+            self.query_one("#update_error_buttons_row", Horizontal).styles.display = "none"
+
+            pbar = self.query_one("#update_pbar", ProgressBar)
+            pbar.update(progress=0, total=100)
+            self.query_one("#update_status_lbl", Label).update("Verbinde mit GitHub...")
+        except Exception:
+            pass
+
+        self._is_downloading = True
+        self._cancel_event = threading.Event()
+        threading.Thread(target=self._download_worker, args=(installer_url,), daemon=True).start()
+
+    def _download_worker(self, installer_url: str) -> None:
+        try:
+            app = self.app
+        except Exception:
+            return
+
+        filename = self.update_info.get("installer_name") or "AufgabenDetector_Setup.exe"
+        target_path = os.path.join(get_update_temp_dir(), filename)
+
+        def progress_cb(cur: int, tot: int, pct: float) -> None:
+            try:
+                app.call_from_thread(self._on_download_progress, cur, tot, pct)
+            except Exception:
+                pass
+
+        success = download_update_installer(
+            download_url=installer_url,
+            target_path=target_path,
+            progress_callback=progress_cb,
+            cancel_event=self._cancel_event,
+        )
+
+        try:
+            if self._cancel_event and self._cancel_event.is_set():
+                app.call_from_thread(self._on_download_cancelled)
+            elif success:
+                app.call_from_thread(self._on_download_success, target_path)
+            else:
+                app.call_from_thread(
+                    self._on_download_error,
+                    "Download fehlgeschlagen. Bitte Internetverbindung prüfen."
+                )
+        except Exception:
+            pass
+
+    def _on_download_progress(self, cur: int, tot: int, pct: float) -> None:
+        try:
+            pbar = self.query_one("#update_pbar", ProgressBar)
+            pbar.update(progress=pct, total=100)
+            cur_mb = cur / (1024 * 1024)
+            tot_mb = tot / (1024 * 1024)
+            status_lbl = self.query_one("#update_status_lbl", Label)
+            if tot > 0:
+                status_lbl.update(f"Lade herunter: {cur_mb:.1f} MB / {tot_mb:.1f} MB ({pct:.0f}%)")
+            else:
+                status_lbl.update(f"Lade herunter: {cur_mb:.1f} MB")
+        except Exception:
+            pass
+
+    def _on_download_cancelled(self) -> None:
+        self._is_downloading = False
+        try:
+            self.query_one("#update_progress_box", Vertical).styles.display = "none"
+            self.query_one("#update_download_buttons_row", Horizontal).styles.display = "none"
+            self.query_one("#update_hint", Label).styles.display = "block"
+            self.query_one("#update_buttons_row", Horizontal).styles.display = "block"
+        except Exception:
+            pass
+
+    def _on_download_error(self, err_msg: str) -> None:
+        self._is_downloading = False
+        self._show_error(err_msg)
+
+    def _show_error(self, err_msg: str) -> None:
+        try:
+            self.query_one("#update_progress_box", Vertical).styles.display = "none"
+            self.query_one("#update_download_buttons_row", Horizontal).styles.display = "none"
+            self.query_one("#update_buttons_row", Horizontal).styles.display = "none"
+            self.query_one("#update_hint", Label).styles.display = "none"
+
+            err_lbl = self.query_one("#update_error_lbl", Label)
+            err_lbl.update(f"⚠️ {err_msg}")
+            self.query_one("#update_error_box", Vertical).styles.display = "block"
+            self.query_one("#update_error_buttons_row", Horizontal).styles.display = "block"
+        except Exception:
+            pass
+
+    def _on_download_success(self, target_path: str) -> None:
+        self._is_downloading = False
+        try:
+            pbar = self.query_one("#update_pbar", ProgressBar)
+            pbar.update(progress=100, total=100)
+            status_lbl = self.query_one("#update_status_lbl", Label)
+            status_lbl.update("[bold #a6e3a1]✓ Download fertig! Bereite Installation vor...[/]")
+            self.query_one("#update_download_buttons_row", Horizontal).styles.display = "none"
+        except Exception:
+            pass
+
+        # Installer im Hintergrund starten und Anwendung beenden
+        launched = launch_update_and_restart(target_path, WORKSPACE_DIR)
+        if launched:
+            # Kurzer visueller Übergang vor dem Schließen
+            self.set_timer(1.2, self.app.exit)
+        else:
+            self._show_error("Update-Runner konnte nicht gestartet werden. Bitte Installer manuell ausführen.")
+
+    def action_cancel_download(self) -> None:
+        if self._cancel_event:
+            self._cancel_event.set()
 
     def action_open_release(self) -> None:
         url = self.update_info.get("html_url")
@@ -2869,10 +3082,12 @@ class UpdateReminderModal(ModalScreen[None]):
         self.dismiss()
 
     def action_dismiss_modal(self) -> None:
+        if self._is_downloading:
+            self.action_cancel_download()
         self.dismiss()
 
     def key_escape(self) -> None:
-        self.dismiss()
+        self.action_dismiss_modal()
 
 
 class SettingsModal(ModalScreen[Optional[str]]):
@@ -2884,7 +3099,7 @@ class SettingsModal(ModalScreen[Optional[str]]):
     }
     #settings_dialog {
         width: 62;
-        max-height: 90%;
+        max-height: 96%;
         height: auto;
         border: thick #b4befe;
         background: #1e1e2e;
@@ -2929,7 +3144,7 @@ class SettingsModal(ModalScreen[Optional[str]]):
     ]
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="settings_dialog"):
+        with VerticalScroll(id="settings_dialog"):
             with Horizontal(id="settings_header_row"):
                 yield Label("⚙️ Settings", id="settings_title")
                 yield Label(f"v{APP_VERSION}", id="settings_version_tag")
@@ -3606,6 +3821,13 @@ class TrashModal(ModalScreen[None]):
                 yield Button("↩️ Back [ESC]", id="btn_trash_close", variant="default")
 
     def on_mount(self) -> None:
+        if sys.platform == "win32":
+            try:
+                from win_dialogs import enable_high_dpi_awareness
+                enable_high_dpi_awareness()
+            except Exception:
+                pass
+
         dt = self.query_one(DataTable)
         dt.cell_padding = 2
         dt.add_columns("#", "Platform", "Subject", "Assignment", "Due Date", "Status")
@@ -5786,7 +6008,7 @@ class ExamsScreen(Screen):
 
     def on_mount(self) -> None:
         dt = self.query_one("#exams_table", DataTable)
-        dt.cell_padding = 2
+        dt.cell_padding = 1
         dt.add_columns("#", "Type", "Subject", "Date", "Time", "Topic / Notes", "Teacher", "Room", "Countdown")
         self.reload_data()
 
@@ -5804,7 +6026,7 @@ class ExamsScreen(Screen):
         if not self.exams:
             self.action_sync_exams()
 
-    def _populate_table(self) -> None:
+    def _populate_table(self, term_w_override: Optional[int] = None) -> None:
         dt = self.query_one("#exams_table", DataTable)
         dt.clear()
 
@@ -5832,11 +6054,42 @@ class ExamsScreen(Screen):
             btn_toggle.label = "📅 Past Exams: OFF"
             btn_toggle.variant = "primary"
 
-        # Dynamische Breitenberechnung: Limitiert die Spalte Topic / Notes so,
-        # dass alle Spalten (#, Type, Subject, Date, Time, Topic, Teacher, Room, Countdown)
-        # sauber Platz haben und horizontales Scrollen vermieden wird.
-        term_w = self.size.width if (self.size and self.size.width > 0) else 125
-        max_topic_len = max(24, min(36, term_w - 94))
+        # Dynamische Breitenberechnung: Verteilt alle 9 Spalten proportional über die volle Breite,
+        # sodass rechts kein Platz frei bleibt und Themen/Notizen maximalen Raum erhalten.
+        if term_w_override is not None and term_w_override > 0:
+            term_w = term_w_override
+        else:
+            try:
+                container = self.query_one("#exams_table_container")
+                term_w = container.size.width if (container.size and container.size.width > 0) else (self.size.width - 2 if self.size and self.size.width > 0 else 121)
+            except Exception:
+                term_w = self.size.width - 2 if (self.size and self.size.width > 0) else 121
+
+        avail_w = max(80, term_w - 1)  # 1 Spalte Puffer für vertikale Scrollbar
+        total_padding = 9 * (2 * dt.cell_padding)  # 9 Spalten * (2 * 1) = 18 Zeichen Padding
+        avail_content = avail_w - total_padding
+
+        if avail_content < 60:
+            col_widths = [3, 4, 6, 8, 11, max(10, avail_content - 44), 6, 4, 6]
+        else:
+            base_widths = [3, 4, 8, 10, 13, 20, 8, 6, 10]
+            extra = max(0, avail_content - sum(base_widths))
+            w_subj = 8 + int(extra * 0.12)
+            w_date = 10 + int(extra * 0.04)
+            w_teach = 8 + int(extra * 0.10)
+            w_room = 6 + int(extra * 0.04)
+            w_cd = 10 + int(extra * 0.10)
+            assigned = (w_subj - 8) + (w_date - 10) + (w_teach - 8) + (w_room - 6) + (w_cd - 10)
+            w_topic = 20 + (extra - assigned)
+            col_widths = [3, 4, w_subj, w_date, 13, w_topic, w_teach, w_room, w_cd]
+
+        # Spaltenbreiten der DataTable fest zuweisen, um den Leerraum rechts vollständig zu schließen
+        if dt.columns:
+            for col_obj, w in zip(dt.columns.values(), col_widths):
+                col_obj.width = w
+                col_obj.auto_width = False
+
+        max_topic_len = col_widths[5]
 
         for idx, ex in enumerate(visible_exams, start=1):
             if ex.exam_type == "SA":
@@ -5853,7 +6106,10 @@ class ExamsScreen(Screen):
             # Dim row if past
             dim_style = "dim" if ex.is_past and ex.days_until < 0 else ""
 
-            subj_text = Text(ex.subject, style=f"bold white {dim_style}".strip())
+            subj_str = ex.subject
+            if len(subj_str) > col_widths[2]:
+                subj_str = subj_str[: max(0, col_widths[2] - 1)] + "…"
+            subj_text = Text(subj_str, style=f"bold white {dim_style}".strip(), no_wrap=True, overflow="ellipsis")
 
             try:
                 dt_obj = datetime.datetime.strptime(ex.date, "%Y-%m-%d").date()
@@ -5862,10 +6118,10 @@ class ExamsScreen(Screen):
                 date_str = f"{wk}, {dt_obj.day:02d}.{dt_obj.month:02d}."
             except Exception:
                 date_str = ex.date_display
-            date_styled = Text(date_str, style=f"white {dim_style}".strip())
+            date_styled = Text(date_str, style=f"white {dim_style}".strip(), no_wrap=True)
 
             time_str = f"{ex.start_time} - {ex.end_time}"
-            time_styled = Text(time_str, style=f"dim {dim_style}".strip())
+            time_styled = Text(time_str, style=f"dim {dim_style}".strip(), no_wrap=True)
 
             # Topic / Notes: Einzeilig halten (keine 2. Zeile), mit "..." kürzen
             raw_text = ""
@@ -5902,19 +6158,23 @@ class ExamsScreen(Screen):
                 topic_styled = Text("- none -", style=f"italic dim {dim_style}".strip(), no_wrap=True)
 
             teachers_str = ", ".join(ex.teachers) if ex.teachers else "-"
-            teachers_styled = Text(teachers_str, style=f"white {dim_style}".strip())
+            if len(teachers_str) > col_widths[6]:
+                teachers_str = teachers_str[: max(0, col_widths[6] - 1)] + "…"
+            teachers_styled = Text(teachers_str, style=f"white {dim_style}".strip(), no_wrap=True, overflow="ellipsis")
 
             rooms_str = ", ".join(ex.rooms) if ex.rooms else "-"
-            rooms_styled = Text(rooms_str, style=f"white {dim_style}".strip())
+            if len(rooms_str) > col_widths[7]:
+                rooms_str = rooms_str[: max(0, col_widths[7] - 1)] + "…"
+            rooms_styled = Text(rooms_str, style=f"white {dim_style}".strip(), no_wrap=True, overflow="ellipsis")
 
             if ex.is_past and ex.days_until < 0:
-                cd_styled = Text(ex.countdown_display, style="dim")
+                cd_styled = Text(ex.countdown_display, style="dim", no_wrap=True)
             elif ex.days_until == 0:
-                cd_styled = Text(ex.countdown_display, style="bold red")
+                cd_styled = Text(ex.countdown_display, style="bold red", no_wrap=True)
             elif ex.days_until <= 3:
-                cd_styled = Text(ex.countdown_display, style="bold yellow")
+                cd_styled = Text(ex.countdown_display, style="bold yellow", no_wrap=True)
             else:
-                cd_styled = Text(ex.countdown_display, style="bold cyan")
+                cd_styled = Text(ex.countdown_display, style="bold cyan", no_wrap=True)
 
             dt.add_row(
                 Text(str(idx), style="dim"),
@@ -5942,8 +6202,9 @@ class ExamsScreen(Screen):
         self.app.push_screen(ExamDetailModal(exam), on_saved)
 
     def on_resize(self, event: Resize) -> None:
-        if self.is_mounted and hasattr(self, "exams") and self.exams:
-            self._populate_table()
+        if self.is_mounted:
+            override_w = (event.size.width - 2) if (event.size and event.size.width > 0) else None
+            self._populate_table(term_w_override=override_w)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
@@ -7243,7 +7504,7 @@ def run_tui():
         except Exception:
             pass
 
-    ensure_terminal_window_size(target_cols=136, min_height_px=750)
+    ensure_terminal_window_size(target_cols=123, min_height_px=680)
     app = AufgabenDetectorApp()
     try:
         app.run()

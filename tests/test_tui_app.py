@@ -641,7 +641,7 @@ class TestAufgabenDetectorTUI(unittest.IsolatedAsyncioTestCase):
         with patch("tui_app.ensure_terminal_window_size") as mock_ensure:
             with patch.object(AufgabenDetectorApp, "run") as mock_run:
                 run_tui()
-                mock_ensure.assert_called_once_with(target_cols=136, min_height_px=750)
+                mock_ensure.assert_called_once_with(target_cols=123, min_height_px=680)
                 mock_run.assert_called_once_with()
 
     def test_ui_module_does_not_call_mode_con_on_import(self):

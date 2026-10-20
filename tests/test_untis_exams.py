@@ -155,6 +155,8 @@ class TestUntisExamsModelAndService(unittest.TestCase):
 
     def test_cache_saving_loading_and_next_upcoming(self):
         """Prüft das Cachen von Prüfungen und get_next_upcoming_exam."""
+        d1 = (datetime.date.today() + datetime.timedelta(days=10)).strftime("%Y-%m-%d")
+        d2 = (datetime.date.today() + datetime.timedelta(days=30)).strftime("%Y-%m-%d")
         test_exams = [
             UntisExam(
                 id="ex1",
@@ -163,13 +165,13 @@ class TestUntisExamsModelAndService(unittest.TestCase):
                 subject="BET",
                 name="Betriebstechnik",
                 text="",
-                date="2026-10-19",
-                date_display="19.10.2026",
+                date=d1,
+                date_display=d1,
                 start_time="15:15",
                 end_time="16:05",
                 teachers=["WWE"],
                 rooms=["A1.15"],
-                days_until=15,
+                days_until=10,
                 is_past=False,
             ),
             UntisExam(
@@ -179,8 +181,8 @@ class TestUntisExamsModelAndService(unittest.TestCase):
                 subject="D",
                 name="D-SA",
                 text="",
-                date="2026-12-10",
-                date_display="10.12.2026",
+                date=d2,
+                date_display=d2,
                 start_time="10:45",
                 end_time="12:35",
                 teachers=["SIL"],
@@ -1016,6 +1018,43 @@ class TestUntisExamsTUI(unittest.IsolatedAsyncioTestCase):
                 # 5. Im Detail-Modal muss der gesamte Text stehen (ungekürzt und inklusive Zeilenumbrüche)
                 ta = detail_modal.query_one("#inp_exam_topics", TextArea)
                 self.assertEqual(ta.text, long_topics_text)
+
+    async def test_exams_screen_full_width_column_distribution_and_resize(self):
+        """Verifiziert, dass alle 9 Spalten im ExamsScreen die volle Bildschirmbreite ausfüllen
+        ohne Leerraum rechts und ohne horizontale Scrollbar (bei 123 und 160 Spalten)."""
+        from tui_app import ExamsScreen
+        from textual.widgets import DataTable
+        from textual.events import Resize
+        from textual.geometry import Size
+
+        app = AufgabenDetectorApp(self.mgr)
+        async with app.run_test(size=(123, 33)) as pilot:
+            screen = ExamsScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+
+            dt = screen.query_one("#exams_table", DataTable)
+            render_widths_123 = [c.get_render_width(dt) for c in dt.columns.values()]
+            sum_123 = sum(render_widths_123)
+
+            # Muss die 123 Spalten (abzüglich Rand/Puffer) ausfüllen und keine horizontale Scrollbar haben
+            self.assertGreaterEqual(sum_123, 118)
+            self.assertLessEqual(sum_123, 122)
+            self.assertFalse(dt.show_horizontal_scrollbar)
+
+            # Auf breites Fenster (160 Spalten) resizen
+            await pilot.resize_terminal(160, 40)
+            await pilot.pause()
+
+            render_widths_160 = [c.get_render_width(dt) for c in dt.columns.values()]
+            sum_160 = sum(render_widths_160)
+
+            # Spalten müssen sich proportional auf die neue Breite dehnen
+            self.assertGreaterEqual(sum_160, 155)
+            self.assertLessEqual(sum_160, 160)
+            self.assertFalse(dt.show_horizontal_scrollbar)
+            # Topic-Spalte (Index 5) muss deutlich breiter sein als bei 123 Spalten
+            self.assertGreater(render_widths_160[5], render_widths_123[5])
 
 
 if __name__ == "__main__":

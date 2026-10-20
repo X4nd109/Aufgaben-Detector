@@ -271,9 +271,25 @@ class SchoolbookService:
     @classmethod
     def pick_pdf_file(cls, dialog_title: str = "Select PDF Schoolbook") -> Optional[str]:
         """
-        Öffnet einen nativen Windows Datei-Auswahldialog zur Wahl einer PDF-Datei.
-        Verwendet Tkinter mit Topmost-Root und Fallback auf PowerShell Forms.
+        Öffnet einen hochauflösenden, nativen Windows Datei-Auswahldialog (IFileOpenDialog)
+        zur Wahl einer PDF-Datei mit voller Per-Monitor DPI-Skalierung.
         """
+        try:
+            try:
+                from src.core.win_dialogs import pick_file
+            except ImportError:
+                try:
+                    from core.win_dialogs import pick_file
+                except ImportError:
+                    from win_dialogs import pick_file
+
+            return pick_file(
+                dialog_title=dialog_title,
+                filter_name="PDF Documents",
+                filter_ext="*.pdf",
+            )
+        except Exception as e:
+            logger.debug(f"win_dialogs.pick_file fehlgeschlagen oder nicht verfügbar: {e}")
         # Versuch 1: Tkinter
         try:
             import tkinter as tk

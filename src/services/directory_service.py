@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import time
+import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 try:
@@ -118,7 +119,7 @@ class DirectoryService:
                 return d
 
         entry = {
-            "id": f"dir_{int(time.time() * 1000)}",
+            "id": f"dir_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}",
             "title": title_clean,
             "path": norm_path,
             "created_at": time.time(),
@@ -217,9 +218,21 @@ class DirectoryService:
     @classmethod
     def pick_directory(cls, dialog_title: str = "Select Folder to Link") -> Optional[str]:
         """
-        Opens a native Windows folder picker dialog.
-        Uses Tkinter topmost root with fallback to PowerShell FolderBrowserDialog.
+        Opens a high-resolution native Windows Explorer folder picker (IFileOpenDialog with FOS_PICKFOLDERS)
+        with full Per-Monitor DPI scaling, falling back to Tkinter and PowerShell.
         """
+        try:
+            try:
+                from src.core.win_dialogs import pick_directory
+            except ImportError:
+                try:
+                    from core.win_dialogs import pick_directory
+                except ImportError:
+                    from win_dialogs import pick_directory
+
+            return pick_directory(dialog_title=dialog_title)
+        except Exception as e:
+            logger.debug(f"win_dialogs.pick_directory failed or not available: {e}")
         # Attempt 1: Tkinter
         try:
             import tkinter as tk

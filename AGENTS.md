@@ -10,12 +10,10 @@
 
 - **Run TUI (Interactive)**: `python main.py` or `.\run.bat`
 - **Run CLI (Agent / Headless)**: `.\tasks.bat <cmd>` or `python main.py <cmd>`
-  - List tasks: `tasks list [-s all|open|overdue|completed] [-f <fach>] [-p moodle|teams] [--json]`
-  - Task details: `tasks show <id|index> [--json]`
-  - Download attachments: `tasks download <id|index> [--dir <path>]`
-  - Open course in browser: `tasks open <fach>`
-  - Schoolbooks (PDF / Web / Digi4School): `tasks books [list|open|add|remove|download] [--json]`
-  - Sync platforms: `tasks sync [--deep]`
+  - `tasks list [-s all|open|overdue|completed] [-f <fach>] [--json]`
+  - `tasks show <id|index> [--json]` | `tasks download <id|index> [--dir <path>]`
+  - `tasks books [list|open|add|remove|download] [--json]` | `tasks dirs [list|open|add|remove] [--json]`
+  - `tasks sync [--deep]` | `tasks open <fach>`
 - **Tests**: `python -m unittest discover tests` or `pytest tests/`
 - **Setup & Dependencies**: `.\setup.bat`
 
@@ -28,12 +26,13 @@
 
 | Document | Purpose / Topics Covered | When to Read (Trigger Condition) |
 | :--- | :--- | :--- |
-| [`docs/current-state.md`](docs/current-state.md) | **Session Handoff**, active milestone, completed features, next steps | **Every session start** or when asked about status/progress |
-| [`docs/project-overview.md`](docs/project-overview.md) | Purpose, target audience, core features (Moodle, Teams, Untis, Downloads), scope | When starting major features or clarifying domain logic |
-| [`docs/architecture.md`](docs/architecture.md) | Components (`src/core`, `services`, `ui`), data flows, caching (`<0.1s`), data models | When modifying system modules, APIs, caching, or data models |
-| [`docs/conventions.md`](docs/conventions.md) | Code style, zero-knowledge rules, CLI token-efficiency, test guidelines | When writing code, adding CLI commands, or refactoring |
-| [`docs/decisions.md`](docs/decisions.md) | Architecture Decision Records (ADRs: Playwright, Textual, Untis JSON-RPC, Licensing) | Before altering architectural patterns or tech choices |
-| [`docs/features.md`](docs/features.md) | UI-Elemente, Button-Namen, Feature-Katalog & Terminologie | Wenn UI-Komponenten, Button-Aktionen oder Features besprochen/bearbeitet werden |
+| [`docs/current-state.md`](docs/current-state.md) | **Session Handoff**, aktive Meilensteine, nächste Schritte | **Jeder Session-Start** / Statusabfragen |
+| [`docs/project-overview.md`](docs/project-overview.md) | Vision, Scope, Features & Plattformen | Beginn neuer Major Features |
+| [`docs/architecture.md`](docs/architecture.md) | Komponenten (`core`, `services`, `ui`), Datenflüsse & Caching | Architektur- & API-Änderungen |
+| [`docs/conventions.md`](docs/conventions.md) | Code-Style, Zero-Knowledge-Regeln, CLI-Standards | Beim Schreiben von Code/Tests |
+| [`docs/decisions.md`](docs/decisions.md) | Architecture Decision Records (ADRs) | Vor Architekturentscheidungen |
+| [`docs/features.md`](docs/features.md) | Feature- & UI-Katalog (Buttons, Shortcuts, Views) | Bearbeitung von UI/Features |
+| [`docs/changelog.md`](docs/changelog.md) | Versionierung & Historie (Keep a Changelog) | Releases & Versionsvergleiche |
 
 ---
 

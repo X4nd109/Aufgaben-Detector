@@ -8,7 +8,7 @@
 
 #define AppName "Aufgaben-Detector"
 #ifndef AppVersion
-#define AppVersion "1.0.4"
+#define AppVersion "1.0.5"
 #endif
 #define AppPublisher "Alexander Endl"
 #define AppURL "https://github.com/X4nd109/Aufgaben-Detector"
@@ -83,7 +83,8 @@ Filename: "{app}\setup.bat"; \
 Filename: "{app}\scripts\setup_command.bat"; \
   WorkingDir: "{app}"; \
   Flags: postinstall shellexec; \
-  Description: "Globalen Terminal-Befehl 'tasks' einrichten (empfohlen)"
+  Description: "Globalen Terminal-Befehl 'tasks' einrichten (empfohlen)"; \
+  Check: ShouldSetupTasksCommand
 
 ; 4. Programm starten (optional)
 Filename: "{app}\run.bat"; \
@@ -101,6 +102,12 @@ Type: filesandordirs; Name: "{app}\cache"
 Type: files; Name: "{app}\.first_run_completed"
 
 [Code]
+function ShouldSetupTasksCommand: Boolean;
+begin
+  // Überspringen, wenn Setup mit /NOTASKS=1 oder /UPDATE=1 aufgerufen wird
+  Result := (ExpandConstant('{param:notasks|0}') <> '1') and (ExpandConstant('{param:update|0}') <> '1');
+end;
+
 function IsPythonInstalled: Boolean;
 begin
   Result := FileExists(ExpandConstant('{localappdata}\Programs\Python\Python312\python.exe')) or

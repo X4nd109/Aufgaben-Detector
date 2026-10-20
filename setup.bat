@@ -3,6 +3,11 @@ setlocal enabledelayedexpansion
 chcp 65001 >nul
 title Aufgaben-Detector - Setup
 
+set "IS_SILENT=0"
+if /i "%~1"=="/silent" set "IS_SILENT=1"
+if /i "%~1"=="--silent" set "IS_SILENT=1"
+if /i "%~1"=="-s" set "IS_SILENT=1"
+
 echo =======================================================
 echo          Aufgaben-Detector - Setup ^& Installation
 echo =======================================================
@@ -62,7 +67,7 @@ if exist "%~dp0python_installer.exe" (
 
 if not exist "!PY_INSTALLER!" (
     echo [X] Download fehlgeschlagen. Bitte installiere Python 3.12 manuell von https://www.python.org
-    pause
+    if "!IS_SILENT!"=="0" pause
     exit /b 1
 )
 
@@ -94,7 +99,7 @@ if exist "C:\Python310\python.exe" (
 echo [X] Python konnte nicht automatisch eingerichtet werden.
 echo     Bitte installiere Python manuell von: https://www.python.org/downloads/
 echo     Wichtig: Beim Setup das Haekchen 'Add python.exe to PATH' setzen!
-pause
+if "!IS_SILENT!"=="0" pause
 exit /b 1
 
 :python_found
@@ -140,4 +145,4 @@ echo [OK] Setup erfolgreich abgeschlossen!
 echo      Du kannst das Programm nun mit run.bat starten.
 echo =======================================================
 echo.
-pause
+if "!IS_SILENT!"=="0" pause
