@@ -22,7 +22,7 @@ from rich.text import Text
 from rich.markup import escape
 from textual.app import App, ComposeResult, RenderResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll, Center
 from textual import events
 from textual.events import Resize, MouseDown, Click
 from textual.geometry import Size
@@ -32,6 +32,14 @@ from textual.widget import Widget
 from textual.message import Message
 from textual.widgets import Button, DataTable, Header, Input, Label, Markdown, Static, TextArea, LoadingIndicator, ProgressBar, Select
 from textual.command import CommandPalette, Provider, DiscoveryHit, Hit, Hits, CommandInput, SearchIcon, CommandList
+try:
+    from src.ui.range_slider import TwoThumbRangeSlider
+except ImportError:
+    try:
+        from range_slider import TwoThumbRangeSlider
+    except ImportError:
+        pass
+
 from textual.theme import Theme
 from textual.binding import Binding
 import urllib.parse
@@ -2441,15 +2449,17 @@ class Digi4SchoolDownloadModal(ModalScreen[Optional[dict]]):
         Binding("escape", "cancel", "Cancel"),
     ]
 
-    def __init__(self, initial_code: str = "") -> None:
+    def __init__(self, initial_code: str = "", initial_email: str = "", initial_quality: str = "ultra") -> None:
         super().__init__()
         self.initial_code = initial_code.strip()
+        self.initial_email = initial_email.strip()
+        self.initial_quality = initial_quality.strip() if initial_quality else "ultra"
 
     def compose(self) -> ComposeResult:
         with Vertical(id="digi_download_dialog"):
             yield Label("📥 Download Digi4School Book", id="digi_modal_title")
             yield Label("Digi4School Email:", classes="digi_input_label")
-            yield Input(placeholder="your.email@example.com", id="digi_input_email", classes="digi_input")
+            yield Input(value=self.initial_email, placeholder="your.email@example.com", id="digi_input_email", classes="digi_input")
             yield Label("Digi4School Password:", classes="digi_input_label")
             yield Input(placeholder="Password", password=True, id="digi_input_password", classes="digi_input")
             yield Label("12-Digit Book Access Code:", classes="digi_input_label")
@@ -2461,13 +2471,13 @@ class Digi4SchoolDownloadModal(ModalScreen[Optional[dict]]):
                     ("High-Res (Scale 3.0x, ~450 DPI) [Balanced]", "high"),
                     ("Standard (Scale 2.0x, ~300 DPI) [Fast]", "standard"),
                 ],
-                value="ultra",
+                value=self.initial_quality,
                 allow_blank=False,
                 id="digi_select_quality",
                 classes="digi_select",
             )
             with Horizontal(id="digi_download_btn_row"):
-                yield Button("Start Download", variant="success", id="btn_start_digi_download")
+                yield Button("Next: Select Pages ➡️", variant="success", id="btn_start_digi_download")
                 yield Button("Cancel", variant="default", id="btn_cancel_digi_download")
 
     def on_mount(self) -> None:
@@ -2519,6 +2529,388 @@ class Digi4SchoolDownloadModal(ModalScreen[Optional[dict]]):
             return
 
         self.dismiss({"email": email, "password": password, "code": code, "quality": str(quality)})
+
+
+
+
+class Digi4SchoolDetectModal(ModalScreen[Optional[dict]]):
+    """Ladedialog für die automatische Erkennung der Gesamtseitenzahl und Buchmetadaten."""
+
+    DEFAULT_CSS = """
+    Digi4SchoolDetectModal {
+        align: center middle;
+    }
+    #digi_detect_dialog {
+        width: 68;
+        height: auto;
+        border: thick #f38ba8;
+        background: #1e1e2e;
+        padding: 1 2;
+    }
+    #digi_detect_title {
+        text-align: center;
+        text-style: bold;
+        margin-bottom: 1;
+        color: #f38ba8;
+    }
+    #digi_detect_status {
+        text-align: center;
+        color: #89b4fa;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
+    #digi_detect_loading {
+        align: center middle;
+        height: auto;
+        margin: 1 0;
+    }
+    #digi_detect_btn_row {
+        height: auto;
+        align: center middle;
+        margin-top: 1;
+    }
+    #digi_detect_btn_row Button {
+        min-width: 16;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, email: str, password: str, code: str, quality: str = "ultra", pages: Optional[str] = None) -> None:
+        super().__init__()
+        self.email = email
+        self.password = password
+        self.code = code
+        self.quality = quality
+        self.pages = pages
+        self._cancel_async_event: Optional[asyncio.Event] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="digi_detect_dialog"):
+            yield Label("🔍 Digi4School Book Inspection", id="digi_detect_title")
+            with Center(id="digi_detect_loading"):
+                yield LoadingIndicator()
+            yield Label("Connecting to Digi4School and detecting book pages...", id="digi_detect_status")
+            with Horizontal(id="digi_detect_btn_row"):
+                yield Button("Cancel", variant="error", id="btn_cancel_detect")
+
+    def on_mount(self) -> None:
+        threading.Thread(target=self._run_detect_thread, daemon=True).start()
+
+    def action_cancel(self) -> None:
+        if self._cancel_async_event and self._loop:
+            self._loop.call_soon_threadsafe(self._cancel_async_event.set)
+        self.dismiss(None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn_cancel_detect":
+            self.action_cancel()
+
+    def _run_detect_thread(self) -> None:
+        import asyncio
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
+        try:
+            self._cancel_async_event = asyncio.Event()
+            res = self._loop.run_until_complete(
+                Digi4SchoolService.inspect_book(
+                    email=self.email,
+                    password=self.password,
+                    code=self.code,
+                    cancel_event=self._cancel_async_event,
+                )
+            )
+            self.app.call_from_thread(self._on_success, res)
+        except asyncio.CancelledError:
+            self.app.call_from_thread(self.dismiss, None)
+        except Exception as e:
+            self.app.call_from_thread(self._on_error, str(e))
+
+    def _on_success(self, res: dict) -> None:
+        self.dismiss({
+            "status": "ok",
+            "email": self.email,
+            "password": self.password,
+            "code": self.code,
+            "quality": self.quality,
+            "title": res.get("title") or self.code,
+            "total_pages": res.get("total_pages"),
+        })
+
+    def _on_error(self, err_msg: str) -> None:
+        self.dismiss({
+            "status": "error",
+            "error": err_msg,
+            "email": self.email,
+            "password": self.password,
+            "code": self.code,
+            "quality": self.quality,
+            "title": self.code,
+            "total_pages": None,
+        })
+
+
+class Digi4SchoolPageRangeModal(ModalScreen[Optional[dict]]):
+    """Menü zur interaktiven Auswahl des Seitenbereichs für den Digi4School-Buchdownload."""
+
+    DEFAULT_CSS = """
+    Digi4SchoolPageRangeModal {
+        align: center middle;
+    }
+    #d4s_range_dialog {
+        width: 76;
+        height: auto;
+        border: thick #f38ba8;
+        background: #1e1e2e;
+        padding: 1 2;
+    }
+    #d4s_range_title {
+        text-align: center;
+        text-style: bold;
+        margin-bottom: 1;
+        color: #f38ba8;
+    }
+    #d4s_book_info_box {
+        background: #313244;
+        border: solid #45475a;
+        padding: 1;
+        margin-bottom: 1;
+        text-align: center;
+    }
+    #d4s_book_title_lbl {
+        color: #cdd6f4;
+        text-style: bold;
+    }
+    #d4s_book_code_lbl {
+        color: #89b4fa;
+        margin-top: 0;
+    }
+    #d4s_book_pages_lbl {
+        color: #a6e3a1;
+        margin-top: 0;
+    }
+    .warning {
+        color: #f9e2af !important;
+    }
+    #d4s_inputs_row {
+        height: auto;
+        margin-top: 1;
+    }
+    .range_input_col {
+        width: 1fr;
+        height: auto;
+        padding: 0 1;
+    }
+    .range_input_label {
+        color: #cdd6f4;
+        margin-bottom: 0;
+    }
+    .range_num_input {
+        width: 100%;
+        margin-bottom: 1;
+    }
+    #range_quick_row {
+        height: auto;
+        align: center middle;
+        margin-top: 0;
+        margin-bottom: 1;
+    }
+    #range_quick_row Button {
+        min-width: 16;
+    }
+    #d4s_range_btn_row {
+        height: auto;
+        align: center middle;
+        margin-top: 1;
+    }
+    #d4s_range_btn_row Button {
+        margin: 0 1;
+        min-width: 16;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(
+        self,
+        email: str,
+        password: str,
+        code: str,
+        quality: str,
+        title: str,
+        total_pages: Optional[int] = None,
+        error_msg: Optional[str] = None,
+    ) -> None:
+        super().__init__()
+        self.email = email
+        self.password = password
+        self.code = code
+        self.quality = quality
+        self.book_title = title
+        self.detected_total = total_pages
+        self.error_msg = error_msg
+        self.max_pages = total_pages if (total_pages and total_pages > 0) else 100
+        self.start_page = 1
+        self.end_page = self.max_pages
+        self._ignore_input_events = False
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="d4s_range_dialog"):
+            yield Label("📖 Digi4School Page Range Selection", id="d4s_range_title")
+            with Vertical(id="d4s_book_info_box"):
+                yield Label(f"Book: {self.book_title}", id="d4s_book_title_lbl")
+                yield Label(f"Code: {self.code}", id="d4s_book_code_lbl")
+                if self.detected_total:
+                    yield Label(f"✓ Detected Total Pages: {self.detected_total}", id="d4s_book_pages_lbl")
+                else:
+                    warning_text = "⚠️ Total pages could not be auto-detected. Please adjust range manually."
+                    if self.error_msg:
+                        warning_text += f" ({self.error_msg})"
+                    yield Label(warning_text, id="d4s_book_pages_lbl", classes="warning")
+
+            yield TwoThumbRangeSlider(
+                min_val=1,
+                max_val=self.max_pages,
+                start_val=self.start_page,
+                end_val=self.end_page,
+                id="range_slider_widget",
+            )
+
+            with Horizontal(id="d4s_inputs_row"):
+                with Vertical(classes="range_input_col"):
+                    yield Label("From Page (Start):", classes="range_input_label")
+                    yield Input(
+                        value=str(self.start_page),
+                        placeholder="1",
+                        id="input_range_start",
+                        classes="range_num_input",
+                    )
+                with Vertical(classes="range_input_col"):
+                    yield Label("To Page (End):", classes="range_input_label")
+                    yield Input(
+                        value=str(self.end_page),
+                        placeholder=str(self.max_pages),
+                        id="input_range_end",
+                        classes="range_num_input",
+                    )
+
+            with Horizontal(id="range_quick_row"):
+                yield Button("All", variant="primary", id="btn_all_pages")
+
+            with Horizontal(id="d4s_range_btn_row"):
+                yield Button("Start Download", variant="success", id="btn_start_download_from_range")
+                yield Button("Back", variant="default", id="btn_back_to_credentials")
+                yield Button("Cancel", variant="error", id="btn_cancel_range")
+
+    def on_mount(self) -> None:
+        try:
+            self.query_one("#range_slider_widget", TwoThumbRangeSlider).focus()
+        except Exception:
+            pass
+
+    def on_two_thumb_range_slider_changed(self, message: TwoThumbRangeSlider.Changed) -> None:
+        self.start_page = message.start
+        self.end_page = message.end
+
+        self._ignore_input_events = True
+        try:
+            inp_start = self.query_one("#input_range_start", Input)
+            if inp_start.value != str(self.start_page):
+                inp_start.value = str(self.start_page)
+
+            inp_end = self.query_one("#input_range_end", Input)
+            if inp_end.value != str(self.end_page):
+                inp_end.value = str(self.end_page)
+        finally:
+            self._ignore_input_events = False
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if self._ignore_input_events:
+            return
+        inp_start = self.query_one("#input_range_start", Input)
+        inp_end = self.query_one("#input_range_end", Input)
+        try:
+            s_val = int(inp_start.value.strip())
+            e_val = int(inp_end.value.strip())
+            if 1 <= s_val <= e_val <= self.max_pages:
+                self.start_page = s_val
+                self.end_page = e_val
+                slider = self.query_one("#range_slider_widget", TwoThumbRangeSlider)
+                slider.set_range(s_val, e_val, notify=False)
+        except Exception:
+            pass
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn_id = event.button.id
+        slider = self.query_one("#range_slider_widget", TwoThumbRangeSlider)
+
+        if btn_id == "btn_all_pages":
+            self.start_page = 1
+            self.end_page = self.max_pages
+            slider.set_range(1, self.max_pages)
+            inp_start = self.query_one("#input_range_start", Input)
+            inp_end = self.query_one("#input_range_end", Input)
+            self._ignore_input_events = True
+            try:
+                inp_start.value = "1"
+                inp_end.value = str(self.max_pages)
+            finally:
+                self._ignore_input_events = False
+        elif btn_id == "btn_start_download_from_range":
+            self._submit_download()
+        elif btn_id == "btn_back_to_credentials":
+            self.dismiss({
+                "action": "back",
+                "code": self.code,
+                "email": self.email,
+                "quality": self.quality,
+            })
+        elif btn_id == "btn_cancel_range":
+            self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+    def _submit_download(self) -> None:
+        inp_start = self.query_one("#input_range_start", Input)
+        inp_end = self.query_one("#input_range_end", Input)
+        try:
+            s = int(inp_start.value.strip())
+            e = int(inp_end.value.strip())
+        except ValueError:
+            self.notify("Please enter valid page numbers.", severity="error")
+            return
+
+        if s < 1:
+            self.notify("Start page must be at least 1.", severity="error")
+            return
+        if s > e:
+            self.notify("Start page cannot be greater than end page.", severity="error")
+            return
+        if e > self.max_pages:
+            self.notify(f"End page cannot exceed total pages ({self.max_pages}).", severity="error")
+            return
+
+        # Wenn der gesamte Buchumfang gewählt wurde, pages auf None belassen
+        if self.detected_total and s == 1 and e == self.detected_total:
+            pages_arg = None
+        else:
+            pages_arg = f"{s}-{e}"
+
+        self.dismiss({
+            "action": "download",
+            "email": self.email,
+            "password": self.password,
+            "code": self.code,
+            "quality": self.quality,
+            "pages": pages_arg,
+            "title": self.book_title,
+        })
 
 
 class Digi4SchoolProgressModal(ModalScreen[Optional[dict]]):
@@ -2586,12 +2978,13 @@ class Digi4SchoolProgressModal(ModalScreen[Optional[dict]]):
         Binding("escape", "cancel_or_close", "Schließen"),
     ]
 
-    def __init__(self, email: str, password: str, code: str, quality: str = "ultra") -> None:
+    def __init__(self, email: str, password: str, code: str, quality: str = "ultra", pages: Optional[str] = None) -> None:
         super().__init__()
         self.email = email
         self.password = password
         self.code = code
         self.quality = quality
+        self.pages = pages
         self.download_result: Optional[dict] = None
         self._cancel_async_event: Optional[asyncio.Event] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -2621,7 +3014,8 @@ class Digi4SchoolProgressModal(ModalScreen[Optional[dict]]):
             yield Label("⚠️ Do not open Digi4School in your browser during download!", id="d4s_warning_banner")
             yield ProgressBar(total=100, show_eta=False, show_percentage=True, id="d4s_pbar")
             quality_badge = f"[bold #f9e2af]{self.quality.upper()}[/]"
-            yield Label(f"Quality: {quality_badge} | Initializing download...", id="d4s_status_lbl")
+            pages_desc = f"Pages: [bold #89b4fa]{self.pages}[/]" if self.pages and self.pages != "all" else "Pages: [bold #89b4fa]All[/]"
+            yield Label(f"Quality: {quality_badge} | {pages_desc} | Initializing download...", id="d4s_status_lbl")
             yield Label("Please wait...", id="d4s_detail_lbl")
             yield Label("⏳ Calculating remaining time...", id="d4s_eta_lbl")
             with Horizontal(id="d4s_prog_btn_row"):
@@ -2650,6 +3044,7 @@ class Digi4SchoolProgressModal(ModalScreen[Optional[dict]]):
                     password=self.password,
                     code=self.code,
                     quality=self.quality,
+                    pages=self.pages,
                     progress_cb=progress_callback,
                     cancel_event=self._cancel_async_event,
                 )
@@ -7375,16 +7770,76 @@ class AufgabenDetectorApp(App):
         self.push_screen(SchoolbookUrlModal(initial_url=url), _on_result)
 
     def prompt_digi4school_download(self, initial_code: str = "") -> None:
-        """Opens the dialog to download a Digi4School book as OCR PDF."""
+        """Opens the dialog flow to detect pages and download a Digi4School book as OCR PDF."""
+
+        def _on_range_result(range_res: Optional[dict]) -> None:
+            if not range_res:
+                self.action_open_courses_palette(initial_mode="books")
+                return
+
+            if range_res.get("action") == "back":
+                self.push_screen(
+                    Digi4SchoolDownloadModal(
+                        initial_code=range_res.get("code", initial_code),
+                        initial_email=range_res.get("email", ""),
+                        initial_quality=range_res.get("quality", "ultra"),
+                    ),
+                    _on_input_result,
+                )
+                return
+
+            if range_res.get("action") == "download":
+                self.push_screen(
+                    Digi4SchoolProgressModal(
+                        email=range_res["email"],
+                        password=range_res["password"],
+                        code=range_res["code"],
+                        quality=range_res.get("quality", "ultra"),
+                        pages=range_res.get("pages"),
+                    )
+                )
+
+        def _on_detect_result(detect_res: Optional[dict]) -> None:
+            if not detect_res:
+                self.action_open_courses_palette(initial_mode="books")
+                return
+
+            if detect_res.get("status") == "ok":
+                self.push_screen(
+                    Digi4SchoolPageRangeModal(
+                        email=detect_res["email"],
+                        password=detect_res["password"],
+                        code=detect_res["code"],
+                        quality=detect_res.get("quality", "ultra"),
+                        title=detect_res.get("title") or detect_res["code"],
+                        total_pages=detect_res.get("total_pages"),
+                    ),
+                    _on_range_result,
+                )
+            else:
+                self.push_screen(
+                    Digi4SchoolPageRangeModal(
+                        email=detect_res["email"],
+                        password=detect_res["password"],
+                        code=detect_res["code"],
+                        quality=detect_res.get("quality", "ultra"),
+                        title=detect_res.get("title") or detect_res["code"],
+                        total_pages=None,
+                        error_msg=detect_res.get("error"),
+                    ),
+                    _on_range_result,
+                )
+
         def _on_input_result(res: Optional[dict]) -> None:
             if res and res.get("code"):
                 self.push_screen(
-                    Digi4SchoolProgressModal(
+                    Digi4SchoolDetectModal(
                         email=res["email"],
                         password=res["password"],
                         code=res["code"],
                         quality=res.get("quality", "ultra"),
-                    )
+                    ),
+                    _on_detect_result,
                 )
             else:
                 self.action_open_courses_palette(initial_mode="books")

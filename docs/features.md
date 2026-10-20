@@ -27,7 +27,7 @@
 | `ExcuseLetterModal` (`[U]`) | Modal | Fehlstunden-Übersicht mit Stundenplan-Abgleich und 1-Klick-PDF-Export für die Schule. |
 | `ExamDetailModal` | Modal | Zeigt Prüfungsdetails und ermöglicht das Bearbeiten persönlicher Stoff-Notizen (`exam_notes.json`). |
 | `AddExamModal` | Modal | Formular zum Eintragen manueller Prüfungstermine mit nativer Wochentagserkennung. |
-| `SettingsModal` (`[O]`) | Modal | Scrollbarer Konfigurationsdialog mit Versionsanzeige in der oberen rechten Ecke (`v1.0.8`), Themes, Logins und Schülereinstellungen. |
+| `SettingsModal` (`[O]`) | Modal | Scrollbarer Konfigurationsdialog mit Versionsanzeige in der oberen rechten Ecke (`v1.0.9`), Themes, Logins und Schülereinstellungen. |
 | `UpdateReminderModal` | Modal | Popup-Erinnerung bei neueren GitHub-Releases mit 1-Klick-In-App-Download, Fortschrittsbalken und automatischer Installation im selben Verzeichnis (ohne PATH-Änderung oder Datenverlust). |
 | `LoginChoiceModal` (`[L]`) | Modal | Zentrales Auswahlmenü für Anmeldungen bei Moodle, Microsoft Teams und WebUntis. |
 | `TeamsSetupModal` | Modal | Geführter Teams-Login via Playwright-Chromium mit Passkey-, 2FA- oder Kennwort-Unterstützung. |
@@ -36,7 +36,9 @@
 | `GitSetupModal` | Modal | Einrichtungsdialog für cloudbasierten Git-Sync über privates Repository mit Token-Verschleierung. |
 | `SchoolbookUrlModal` | Modal | Dialog zur Vergabe von Buchtitel und Web-URL für digitale Schulbücher. |
 | `Digi4SchoolDownloadModal` | Modal | Anmelde- und Zugangscode-Eingabe für den automatischen Digi4School-Buchdownload. |
-| `Digi4SchoolProgressModal` | Modal | Fortschrittsanzeige mit Multi-Core OCR-Status, verbleibender Zeit (ETA) und Abbruch-Option. |
+| `Digi4SchoolDetectModal` | Modal | Ladedialog zur automatischen Vorab-Erkennung von Buchtitel und Gesamtseitenzahl über Digi4School. |
+| `Digi4SchoolPageRangeModal` | Modal | Grafischer Dialog zur flexiblen Auswahl des Seitenbereichs mit 2-Thumb-Slider (`TwoThumbRangeSlider`), synchronisierten Ziffernfeldern und Schnellwahl. |
+| `Digi4SchoolProgressModal` | Modal | Fortschrittsanzeige mit Multi-Core OCR-Status, Seitenbereichsanzeige, verbleibender Zeit (ETA) und Abbruch-Option. |
 
 ---
 
@@ -54,7 +56,10 @@
 | `Change Theme` | `[T]` / `Ctrl+P` | Rotiert durch die 22 Themes oder öffnet die Theme-Palette (`search_themes`) mit Rechtsklick-Favoriten (`⭐`). |
 | `ThemeSelectModal` | Modal | Menü zur Auswahl aus allen 22 Themes (inkl. `OLED`); Rechtsklick markiert ein Theme als Favorit (`⭐`), Favoriten stehen ganz oben. |
 | `Render Quality` | `digi_select_quality` | Wählt die Renderqualität im Digi4School-Download-Dialog (Ultra-HD 4.0x, High-Res 3.0x, Standard 2.0x). |
-| `Start Download` | `btn_start_digi_download` | Prüft Tesseract OCR und startet den automatisierten Digi4School Buchdownload. |
+| `Next: Select Pages ➡️` | `btn_start_digi_download` | Prüft Tesseract OCR und leitet die automatische Buchanalyse zur Seitenauswahl ein. |
+| `All Pages (1 - N)` | `btn_all_pages` | Setzt den Schieberegler im Seitenauswahl-Menü auf den vollen Buchumfang. |
+| `TwoThumbRangeSlider` | `range_slider_widget` | Interaktiver 2-Schieber-Slider zur Festlegung von Start- und Endseite via Maus oder Tastatur. |
+| `Start Download` | `btn_start_download_from_range` | Startet den Download und die OCR-Verarbeitung für den exakt ausgewählten Seitenbereich. |
 | `Show in Downloads folder` | `btn_open_folder_d4s` | Öffnet den Downloads-Ordner nach erfolgreichem Buchdownload direkt im Windows Explorer. |
 | `Install Update Now` | `btn_update_install` | Startet den automatischen In-App-Download des Installers und die Aktualisierung im Hintergrund. |
 | `View in Browser` | `btn_update_open` | Öffnet die GitHub-Release-Seite der neuen Version im Standard-Webbrowser. |

@@ -1,7 +1,7 @@
 # Current Project State & Session Handoff — Aufgaben-Detector
 
 > **Last Updated**: 2026-10-20  
-> **Active Milestone**: Milestone 3 — In-App Auto-Update & High-DPI UI Polish (v1.0.8)
+> **Active Milestone**: Milestone 3 — In-App Auto-Update & High-DPI UI Polish (v1.0.9)
 
 ---
 
@@ -123,6 +123,25 @@
   - Maskierung der `\[ESC]`-Klammern, damit Textuals Content/Rich-Markup-Parser die Tastenkombination nicht verschluckt.
   - Neuer Test `test_update_reminder_modal_layout_and_english_texts` in `tests/test_update_service.py` (insgesamt 250 Tests in der Gesamtsuite mit 100 % Erfolgsquote).
 
+- [x] **Tesseract OCR-Optimierung für Fett- und Unterstrichenen Text (v1.0.9)**:
+  - **Sauvola Binarisierung (`thresholding_method=2`)**: Lokale adaptive Schwellenwertbildung verhindert das Zulaufen dicker Buchstabenschlaufen und trennt Unterstreichungen sauber vom Grundtext.
+  - **Nicht-lineare Strichdicken-Normierung (`classify_nonlinear_norm=1`)**: Präzise Klassifizierung fetter Schriftzüge ohne Einstufung als Fremdsymbole.
+  - **Unterstreichungstrennung (`textord_restore_underlines=1` & `textord_underline_threshold=0.5`)**: Horizontale Linien werden gezielt von Unterlängen (`g`, `j`, `p`, `q`, `y`) abgeschnitten.
+  - **Sanftes Unsharp-Masking**: Schärfung vor Tesseract (`radius=1.2, percent=115, threshold=3`) für optimale Kantenpräzision ohne visuelle Einbußen im PDF.
+  - Robuster doppelter Fallback auf Standard-OCR und reine Bild-Einbettung bei inkompatiblen Tesseract-Versionen.
+
+- [x] **Digi4School Interaktive Seitenauswahl & 2-Thumb Range-Slider (v1.0.9)**:
+  - **Automatische Buch- & Seitenzahlerkennung**: Neue Methode `Digi4SchoolService.inspect_book` loggt sich headless im Hintergrund ein und liest Buchtitel sowie die exakte Gesamtzahl der Buchseiten aus.
+  - **Ladedialog `Digi4SchoolDetectModal`**: Kompakte Ladeanzeige (*"Connecting to Digi4School and detecting book pages..."*) mit Lade-Spinner und Abbrechen-Möglichkeit.
+  - **Kompaktes Menü `Digi4SchoolPageRangeModal`**: Grafischer Auswahldialog für den gewünschten Seitenbereich mit Buchtitel, Zugangscode, 2-Thumb-Slider, synchronisierten Ziffernfeldern und zentriertem *All*-Button.
+  - **Interaktives `TwoThumbRangeSlider` Widget**:
+    - Stellt eine visuelle Schiene mit 2 Schiebern (Startseite und Endseite) im Catppuccin Mocha-Design dar.
+    - Volle Mausbedienung (Klick auf Schiene zur Positionierung des nächstgelegenen Griffs sowie Halten und Ziehen per Drag & Drop).
+    - Tastaturnavigation mit Pfeiltasten (`Left`/`Right`, `Shift` für 10er-Schritte, `Tab`/`1`/`2` zum Wechseln des aktiven Schiebers, `Home`/`End`).
+  - **Synchronisierte Ziffernfelder**: Zwei Eingabefelder (*"From Page"* und *"To Page"*) zur Direkteingabe; bidirektional in Echtzeit mit dem Schieberegler synchronisiert.
+  - **Range-Download & OCR**: Nahtlose Weitergabe des gewählten Seitenbereichs (z. B. `20-50`) an `Digi4SchoolProgressModal` und `Digi4SchoolService.download_book`.
+  - 12 neue automatisierte Unit-Tests in `tests/test_page_range_slider.py` (insgesamt 264 Tests in der Gesamtsuite mit 100 % Erfolgsquote).
+
 - [x] **Main Task Dashboard Formatierung, Sync-Uhrzeit & Spaltenpriorisierung (v1.0.9 Polish)**:
   - **Kein Zeilenumbruch der Sync-Uhrzeit**: `#info_bar` und `#info_stats` auf feste `height: 1` gesperrt mit `overflow-y: hidden`, `overflow-x: hidden` und `margin-bottom: 1;`, wodurch die gewohnte leere Trennzeile zwischen Info-Leiste und Aufgaben-Tabelle erhalten bleibt.
   - **Zero-Layout-Shift Sync-Spinner**: `SyncSpinner` besitzt nun eine permanent feste Boxbreite (`width: 3; height: 1; display: block;`). Das Starten und Stoppen des Hintergrund-Syncs verändert die verfügbare Breite um 0 Zeichen, wodurch das Springen der Uhrzeit (`19:09:06`) in eine zweite Zeile vollständig eliminiert wurde.
@@ -150,13 +169,20 @@
 
 ## 3. Known Issues & Blockers
 
-- *None active* (All 252 test suite tests passing cleanly with 100% pass rate).
+- *None active* (All 264 test suite tests passing cleanly with 100% pass rate).
 
 ---
 
 ## 4. Session Handoff Notes (Context for Next Agent)
 
-- **Recent Achievements (2026-10-20 — Main Task Dashboard Formatting & Priority Fixes v1.0.9 Polish)**:
+- **Recent Achievements (2026-10-20 — Tesseract OCR-Optimierung & Digi4School Seitenauswahl v1.0.9)**:
+  - Tesseract 5 OCR-Tuning: Sauvola-Binarisierung (`thresholding_method=2`), Strichdicken-Normierung (`classify_nonlinear_norm=1`), Unterstreichungstrennung (`textord_restore_underlines=1`) und Unsharp-Masking für 100 % Schärfe bei fettem und unterstrichenem Text.
+  - Vollständiger modalgestützter Downloadflow mit automatischer Buchanalyse (`Digi4SchoolService.inspect_book`).
+  - Kurzer Ladedialog `Digi4SchoolDetectModal` visualisiert die Vorab-Erkennung von Titel und Gesamtzahl der Seiten.
+  - Kompaktes Menü `Digi4SchoolPageRangeModal` mit dem 2-Thumb-Slider `TwoThumbRangeSlider`, Zugangscode, zentriertem *All*-Button und Ziffernfeldern.
+  - Nahtlose Weitergabe an `Digi4SchoolProgressModal` und `Digi4SchoolService.download_book(pages=...)`.
+  - 264 Tests in der Gesamtsuite mit 100 % Erfolgsquote.
+- **Previous Achievements (2026-10-20 — Main Task Dashboard Formatting & Priority Fixes v1.0.9 Polish)**:
   - Kein Zeilenumbruch der Sync-Uhrzeit mehr: `#info_bar` auf `height: 1` gesperrt, `SyncSpinner` mit fester Boxbreite (`width: 3`) für Null-Layout-Shift.
   - "Teacher"-Header Truncation ("Teache") durch Anhebung der Spaltenbreite auf min. 8 (bzw. 7) vollständig behoben.
   - Spaltenpriorisierung implementiert: Due Date (28–32 Chars) und Teacher voll erhalten, Assignment flexibel und absorbiert Größenänderungen.

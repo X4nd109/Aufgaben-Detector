@@ -11,6 +11,28 @@ und dieses Projekt hält sich an [Semantic Versioning](https://semver.org/lang/d
 
 ---
 
+## [1.0.9] - 2026-10-20
+
+### Added
+- **Tesseract OCR-Optimierung für Fett- und Unterstrichenen Text**:
+  - **Sauvola Binarisierung (`thresholding_method=2`)**: Lokale adaptive Schwellenwertbildung verhindert das Zulaufen fetter Buchstaben und isoliert Unterstreichungen sauber von Grundlinien.
+  - **Nicht-lineare Strichdicken-Normierung (`classify_nonlinear_norm=1`)**: Skaliert Buchstabenzüge basierend auf Strichdichte, sodass fette Wörter und Überschriften präzise klassifiziert werden.
+  - **Unterstreichungstrennung (`textord_restore_underlines=1` & `textord_underline_threshold=0.5`)**: Trennt horizontale Unterstreichungen gezielt von Unterlängen (`g`, `j`, `p`, `q`, `y`).
+  - **Sanftes Kanten-Sharpening**: `ImageFilter.UnsharpMask(radius=1.2, percent=115, threshold=3)` vor der Übergabe an Tesseract schärft Kanten für maximale OCR-Präzision.
+- **Digi4School Interaktive Seitenauswahl & 2-Thumb Range-Slider**:
+  - **Automatische Buch- & Seitenzahlerkennung**: Neue Methode `Digi4SchoolService.inspect_book` loggt sich headless im Hintergrund ein und liest Buchtitel sowie die exakte Gesamtzahl der Buchseiten aus.
+  - **Ladedialog `Digi4SchoolDetectModal`**: Kurze Ladeanzeige (*"Connecting to Digi4School and detecting book pages..."*) mit Lade-Spinner und Abbrechen-Möglichkeit.
+  - **Menü `Digi4SchoolPageRangeModal`**: Kompaktes Auswahldialog-Layout mit Buchtitel, Zugangscode, 2-Thumb-Slider, synchronisierten Ziffernfeldern und zentriertem *All*-Button.
+  - **Interaktives `TwoThumbRangeSlider` Widget**:
+    - Stellt eine visuelle Schiene mit 2 Schiebern (Startseite und Endseite) im Catppuccin Mocha-Design dar.
+    - Volle Mausbedienung (Klick auf Schiene zur Positionierung des nächstgelegenen Griffs sowie Halten und Ziehen per Drag & Drop).
+    - Tastaturnavigation mit Pfeiltasten (`Left`/`Right`, `Shift` für 10er-Schritte, `Tab`/`1`/`2` zum Wechseln des aktiven Schiebers, `Home`/`End`).
+  - **Synchronisierte Ziffernfelder**: Zwei Eingabefelder (*"From Page"* und *"To Page"*) zur Direkteingabe; bidirektional in Echtzeit mit dem Schieberegler synchronisiert.
+  - **Range-Download & OCR**: Nahtlose Weitergabe des gewählten Seitenbereichs (z. B. `20-50`) an `Digi4SchoolProgressModal` und `Digi4SchoolService.download_book`.
+  - 12 neue automatisierte Unit-Tests in `tests/test_page_range_slider.py` (insgesamt 264 Tests in der Gesamtsuite mit 100 % Erfolgsquote).
+
+---
+
 ## [1.0.8] - 2026-10-20
 
 ### Fixed

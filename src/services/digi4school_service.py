@@ -19,7 +19,7 @@ try:
     import pymupdf as fitz
 except ImportError:
     import fitz  # PyMuPDF fallback
-from PIL import Image
+from PIL import Image, ImageFilter
 from playwright.async_api import ElementHandle, Page, async_playwright
 import pytesseract
 
@@ -629,32 +629,60 @@ async def capture_single_page(
 
 
 def ocr_worker_process(args_tuple: Tuple[int, bytes, str, int, int, str]) -> Tuple[int, bytes]:
-    """Multiprocessing Worker für Tesseract OCR (LSTM Engine, OEM 1, PSM 3)."""
+    """Multiprocessing Worker für Tesseract OCR (LSTM Engine, OEM 1, PSM 3, Sauvola Thresholding)."""
     page_num, img_bytes, lang, dpi, psm, tesseract_cmd = args_tuple
     pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
 
     pil_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-    tess_config = f"--oem 1 --psm {psm} -c user_defined_dpi={dpi} -c preserve_interword_spaces=1"
+
+    # Sanftes Unsharp-Masking für optimale Kantenschärfe bei fetten Glyphen und Unterstreichungen
+    try:
+        ocr_img = pil_img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=115, threshold=3))
+    except Exception:
+        ocr_img = pil_img
+
+    # Optimierte Tesseract-Konfiguration mit Sauvola-Binarisierung, Stroke-Normierung und Unterstreichungstrennung
+    tess_config = (
+        f"--oem 1 --psm {psm} "
+        f"-c user_defined_dpi={dpi} "
+        f"-c preserve_interword_spaces=1 "
+        f"-c thresholding_method=2 "
+        f"-c classify_nonlinear_norm=1 "
+        f"-c textord_restore_underlines=1 "
+        f"-c textord_underline_threshold=0.5"
+    )
 
     try:
         pdf_bytes = pytesseract.image_to_pdf_or_hocr(
-            pil_img,
+            ocr_img,
             extension="pdf",
             lang=lang,
             config=tess_config
         )
         return page_num, pdf_bytes
     except Exception:
-        pt_w = (pil_img.width / dpi) * 72.0
-        pt_h = (pil_img.height / dpi) * 72.0
-        doc = fitz.open()
-        page = doc.new_page(width=pt_w, height=pt_h)
-        buf = io.BytesIO()
-        pil_img.save(buf, format="JPEG", quality=93)
-        page.insert_image(page.rect, stream=buf.getvalue())
-        fallback_bytes = doc.tobytes(garbage=4, deflate=True)
-        doc.close()
-        return page_num, fallback_bytes
+        # Fallback auf Standardkonfiguration ohne erweiterte Parameter, falls ältere Tesseract-Version vorliegt
+        try:
+            fallback_config = f"--oem 1 --psm {psm} -c user_defined_dpi={dpi} -c preserve_interword_spaces=1"
+            pdf_bytes = pytesseract.image_to_pdf_or_hocr(
+                pil_img,
+                extension="pdf",
+                lang=lang,
+                config=fallback_config
+            )
+            return page_num, pdf_bytes
+        except Exception:
+            # Letzter Fallback: Bild ohne OCR direkt in PDF-Seite einbetten
+            pt_w = (pil_img.width / dpi) * 72.0
+            pt_h = (pil_img.height / dpi) * 72.0
+            doc = fitz.open()
+            page = doc.new_page(width=pt_w, height=pt_h)
+            buf = io.BytesIO()
+            pil_img.save(buf, format="JPEG", quality=93)
+            page.insert_image(page.rect, stream=buf.getvalue())
+            fallback_bytes = doc.tobytes(garbage=4, deflate=True)
+            doc.close()
+            return page_num, fallback_bytes
 
 
 def infer_toc_hierarchy(raw_toc_items: List[dict]) -> List[dict]:
@@ -920,6 +948,79 @@ class Digi4SchoolService:
     def get_default_downloads_dir() -> str:
         """Gibt den Pfad zum Downloads-Ordner des Benutzers zurück."""
         return os.path.join(os.path.expanduser("~"), "Downloads")
+
+    @classmethod
+    async def inspect_book(
+        cls,
+        email: str,
+        password: str,
+        code: str,
+        timeout: int = 45,
+        visible: bool = False,
+        cancel_event: Optional[asyncio.Event] = None
+    ) -> Dict[str, Any]:
+        """
+        Meldet sich bei Digi4School an, identifiziert das Buch anhand des Zugangscodes
+        und ermittelt den Buchtitel sowie die Gesamtzahl der Buchseiten.
+
+        Rückgabe: Dict mit den Schlüsseln 'code', 'title', 'total_pages' (oder None bei Nichterkennung).
+        """
+        clean_code = str(code).strip().lower()
+        if not clean_code:
+            raise ValueError("No access code provided.")
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=not visible,
+                args=["--disable-web-security", "--allow-running-insecure-content"]
+            )
+            context = await browser.new_context(
+                viewport={"width": 1280, "height": 900},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            )
+            page = await context.new_page()
+            try:
+                if cancel_event and cancel_event.is_set():
+                    raise asyncio.CancelledError("Inspection cancelled.")
+
+                await login_to_digi4school(page, email, password, timeout=timeout)
+
+                user_books = await fetch_user_books(page)
+                chosen_book = None
+                for b in user_books:
+                    if b.get("code", "").strip().lower() == clean_code:
+                        chosen_book = b
+                        break
+
+                if not chosen_book:
+                    chosen_book = {"code": clean_code, "title": clean_code}
+
+                book_title = chosen_book.get("title", clean_code)
+
+                active_page, viewer_base_url = await open_book_and_resolve_viewer(
+                    context, page, chosen_book, timeout=timeout
+                )
+                await dismiss_popups(active_page)
+
+                if cancel_event and cancel_event.is_set():
+                    raise asyncio.CancelledError("Inspection cancelled.")
+
+                detected_total = await detect_total_pages(active_page, viewer_base_url)
+
+                return {
+                    "code": clean_code,
+                    "title": book_title,
+                    "total_pages": detected_total,
+                }
+            finally:
+                try:
+                    await context.close()
+                except Exception:
+                    pass
+                try:
+                    await browser.close()
+                except Exception:
+                    pass
 
     @classmethod
     async def download_book(
