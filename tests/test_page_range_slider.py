@@ -135,7 +135,11 @@ class TestPageRangesAndService(unittest.TestCase):
         except ImportError:
             import fitz
 
-        tess_path = find_tesseract()
+        try:
+            tess_path = find_tesseract()
+        except FileNotFoundError:
+            tess_path = None
+
         if not tess_path:
             self.skipTest("Tesseract OCR not installed on this system.")
 
