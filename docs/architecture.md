@@ -40,7 +40,6 @@ graph TD
 
     TUI --> TM
     CLI --> TM
-    TUI --> Lic
     TUI --> Schoolbook
     TUI --> Digi4School
     TUI --> Update

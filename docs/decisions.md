@@ -291,3 +291,34 @@ This document records high-impact architectural choices, library selections, and
   - Positive: Zero visual jitter during background sync; no truncation of headers or complete due dates; immediate adaptation on 4K and 1440p monitors upon launch.
   - Negative: On unusually narrow terminals (< 80 columns), `Assignment` titles are heavily truncated with `...` to preserve due dates and teacher codes.
 
+---
+
+## ADR-019: In-Terminal Synchronous Update Loop & Multi-Tier Sync Lag Elimination
+
+- **Date**: 2026-10-21
+- **Status**: Accepted
+- **Context**:
+  1. In-app updating previously relied on detached background helper scripts or external PowerShell commands, which popped up secondary windows, interrupted the user workflow, and re-executed `setup.bat /silent` (redundant pip dependency resolution).
+  2. The onboarding Getting Started guide was permanently lost if a user had previously marked it done or deleted it before updating.
+  3. During live background sync across Moodle and Teams, the TUI experienced extreme lag:
+     - `SyncSpinner` fired every 80 ms (12.5 FPS), flooding Textual's Asyncio loop and Windows ConPTY ANSI parser.
+     - Rapid multi-platform sync callbacks triggered multiple back-to-back `dt.clear()` table rebuilds.
+     - `save_cache()` held the synchronization lock across disk writes, and the prefetcher saved to disk after every single item.
+     - Headless Chromium spiked CPU without renderer limits or GPU disabling.
+- **Decision**:
+  1. **In-Terminal Update Loop (Exit Code 42 & `run.bat`)**:
+     - `UpdateReminderModal` drops `%TEMP%\AufgabenDetector_Update\pending_update.txt` and exits with code 42.
+     - `run.bat` catches exit code 42 and executes the silent Inno Setup installer via `start /wait` in the existing console without spawning extra windows, then loops to re-launch `main.py`.
+     - Omit `setup.bat` during updates, relying on `dependency_checker.py` at launch.
+  2. **Getting Started Auto-Restoration**:
+     - `TaskManager._check_and_apply_version_update` detects updates via version delta or update markers, restoring `manual_welcome_setup_guide` to `Open` at index 0.
+     - Rewrote guide text to reference actual UI buttons (`⚙️ Settings`, `🔑 Login`, `🔄 Sync`, `✓ Mark as Completed`, `🗑️ Delete`) in English.
+  3. **Multi-Tier Sync Performance Optimizations**:
+     - Throttled `SyncSpinner` animation to 250 ms (4 FPS), reducing event loop overhead by >65%.
+     - Decoupled stats bar into `update_info_bar()` and throttled `refresh_table()` to max once every 0.8s during batch sync updates.
+     - Unlocked atomic cache disk writes (`save_cache()`) and batched prefetch disk writes (every 5 tasks).
+     - Configured `--disable-gpu`, `--disable-dev-shm-usage`, and `--renderer-process-limit=2` in Chromium headless args.
+     - Relaxed mouse-back polling from 25 ms to 60 ms.
+- **Consequences**:
+  - Positive: Zero UI lag during sync; responsive 60 FPS interactions; clean in-terminal update without secondary popups; automatic onboarding guide recovery.
+  - Negative: Table rows during multi-platform sync update at up to 0.8s intervals rather than per item (status bar updates immediately).
