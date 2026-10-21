@@ -412,8 +412,8 @@ def main():
     else:
         try:
             from tui_app import run_tui
-            run_tui()
-            sys.exit(0)
+            code = run_tui()
+            sys.exit(code or 0)
         except KeyboardInterrupt:
             sys.exit(0)
         except Exception as e:

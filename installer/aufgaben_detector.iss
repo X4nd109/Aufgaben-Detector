@@ -8,7 +8,7 @@
 
 #define AppName "Aufgaben-Detector"
 #ifndef AppVersion
-#define AppVersion "1.0.9"
+#define AppVersion "1.0.10"
 #endif
 #define AppPublisher "Alexander Endl"
 #define AppURL "https://github.com/X4nd109/Aufgaben-Detector"

@@ -18,7 +18,7 @@ WORKSPACE_DIR = os.path.dirname(SRC_DIR)
 USERPROFILE = os.environ.get("USERPROFILE") or os.path.expanduser("~")
 
 # Anwendungs-Version & GitHub Repository
-APP_VERSION = "1.0.9"
+APP_VERSION = "1.0.10"
 GITHUB_REPO = "X4nd109/Aufgaben-Detector"
 
 
@@ -295,6 +295,17 @@ CHROMIUM_CACHE_ARGS = [
     "--media-cache-size=524288000",
 ]
 
+# Leistungsoptimierungen für Headless-Chromium (verhindert 100% CPU-Spitzen während Hintergrund-Syncs)
+HEADLESS_CHROMIUM_ARGS = [
+    "--disable-gpu",
+    "--disable-dev-shm-usage",
+    "--renderer-process-limit=2",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--mute-audio",
+    "--disable-background-networking",
+]
+
 
 _ACTIVE_BROWSER_CONTEXTS = set()
 _CONTEXTS_LOCK = threading.Lock()
@@ -343,10 +354,11 @@ def launch_teams_browser_context(playwright_instance, user_data_dir: str = None,
     for ch in channels_to_try:
         try:
             extra_args = sso_disable_args if ch == "msedge" else []
+            headless_opt = HEADLESS_CHROMIUM_ARGS if headless else []
             kwargs = {
                 "user_data_dir": target_dir,
                 "headless": headless,
-                "args": base_args + extra_args,
+                "args": base_args + extra_args + headless_opt,
             }
             if ch:
                 kwargs["channel"] = ch

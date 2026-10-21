@@ -3478,7 +3478,7 @@ class UpdateReminderModal(ModalScreen[None]):
         launched = launch_update_and_restart(target_path, WORKSPACE_DIR)
         if launched:
             # Kurzer visueller Übergang vor dem Schließen
-            self.set_timer(1.2, self.app.exit)
+            self.set_timer(1.2, lambda: self.app.exit(return_code=42))
         else:
             self._show_error("Update runner could not be started. Please run the installer manually.")
 
@@ -6724,7 +6724,7 @@ class SyncSpinner(Widget):
         self.set_class(active, "-active")
         if active:
             if self._timer is None:
-                self._timer = self.set_interval(0.08, self._advance_frame)
+                self._timer = self.set_interval(0.25, self._advance_frame)
             else:
                 self._timer.resume()
         else:
@@ -7048,6 +7048,7 @@ class AufgabenDetectorApp(App):
         self._stop_mouse_listener = threading.Event()
         self._mouse_listener_thread: Optional[threading.Thread] = None
         self._terminal_hwnd: Optional[int] = None
+        self._last_sync_table_refresh: float = 0.0
 
         # Theme initialisieren & nur die erlaubten Themes behalten
         self.register_theme(OLED_THEME)
@@ -7336,66 +7337,78 @@ class AufgabenDetectorApp(App):
             except Exception:
                 pass
 
-        # Update statistics: Links oben immer exakt so viele anzeigen, wie gerade sichtbar sind
-        visible_tasks = getattr(self, "current_tasks", []) or []
-        moodle_cnt = len([t for t in visible_tasks if t.platform == "moodle"])
-        teams_cnt = len([t for t in visible_tasks if t.platform == "teams"])
-        manual_cnt = len([t for t in visible_tasks if t.platform in ["manual", "custom"]])
-        del_cnt = len(self.mgr.get_deleted_tasks())
+        # Update statistics via helper
+        self.update_info_bar(term_w_override=term_w)
 
-        open_tasks = [t for t in visible_tasks if not t.is_completed]
-        overdue_cnt = len([t for t in visible_tasks if t.is_overdue])
-        open_cnt = len(open_tasks)
-        total_visible = len(visible_tasks)
+    def update_info_bar(self, term_w_override: Optional[int] = None) -> None:
+        """Aktualisiert die Statistik- und Statuszeile im Info-Bar ohne DataTable-Neuaufbau."""
+        try:
+            visible_tasks = getattr(self, "current_tasks", []) or []
+            moodle_cnt = len([t for t in visible_tasks if t.platform == "moodle"])
+            teams_cnt = len([t for t in visible_tasks if t.platform == "teams"])
+            manual_cnt = len([t for t in visible_tasks if t.platform in ["manual", "custom"]])
+            del_cnt = len(self.mgr.get_deleted_tasks())
 
-        if self.status_filter in ["completed", "abgegeben", "erledigt", "done"]:
-            comp_cnt = len([t for t in visible_tasks if t.is_completed])
-            todo_badge = f"📋 Done: [bold green]{comp_cnt} completed[/bold green]"
-        elif self.status_filter in ["overdue", "ueberfaellig", "überfällig"]:
-            todo_badge = f"📋 Overdue: [bold red]{total_visible} overdue![/bold red]"
-        elif overdue_cnt > 0:
-            todo_badge = f"📋 To Do: [bold red]{open_cnt} open[/bold red] ([bold red]{overdue_cnt} overdue![/bold red])"
-        elif open_cnt > 0:
-            todo_badge = f"📋 To Do: [bold yellow]{open_cnt} open[/bold yellow]"
-        else:
-            todo_badge = "📋 To Do: [bold green]0 open[/bold green]"
+            open_tasks = [t for t in visible_tasks if not t.is_completed]
+            overdue_cnt = len([t for t in visible_tasks if t.is_overdue])
+            open_cnt = len(open_tasks)
+            total_visible = len(visible_tasks)
 
-        sync_time_str = "Never"
-        if self.mgr.last_sync:
-            try:
-                sync_time_str = time.strftime("%H:%M:%S", time.localtime(float(self.mgr.last_sync)))
-            except Exception:
-                sync_time_str = str(self.mgr.last_sync)
+            if self.status_filter in ["completed", "abgegeben", "erledigt", "done"]:
+                comp_cnt = len([t for t in visible_tasks if t.is_completed])
+                todo_badge = f"📋 Done: [bold green]{comp_cnt} completed[/bold green]"
+            elif self.status_filter in ["overdue", "ueberfaellig", "überfällig"]:
+                todo_badge = f"📋 Overdue: [bold red]{total_visible} overdue![/bold red]"
+            elif overdue_cnt > 0:
+                todo_badge = f"📋 To Do: [bold red]{open_cnt} open[/bold red] ([bold red]{overdue_cnt} overdue![/bold red])"
+            elif open_cnt > 0:
+                todo_badge = f"📋 To Do: [bold yellow]{open_cnt} open[/bold yellow]"
+            else:
+                todo_badge = "📋 To Do: [bold green]0 open[/bold green]"
 
-        next_exam = get_next_upcoming_exam()
-        exam_badge = ""
-        if next_exam:
-            try:
-                _ndt = datetime.datetime.strptime(next_exam.date, "%Y-%m-%d").date()
-                next_date_short = f"{_ndt.day:02d}.{_ndt.month:02d}."
-            except Exception:
-                next_date_short = next_exam.date_display
-            exam_badge = f"📝 Next: [bold dodger_blue1]{next_date_short} {next_exam.subject}[/bold dodger_blue1] [bold green]{next_exam.countdown_display}[/bold green]"
+            sync_time_str = "Never"
+            if self.mgr.last_sync:
+                try:
+                    sync_time_str = time.strftime("%H:%M:%S", time.localtime(float(self.mgr.last_sync)))
+                except Exception:
+                    sync_time_str = str(self.mgr.last_sync)
 
-        # Kompakte vs. vollständige Badges je nach Terminalbreite
-        # Schmale Fenster (< 118 Spalten oder wenn Next Exam vorhanden ist und Platz eng wird):
-        # 0-Zähler ausblenden und kompakten Trenner nutzen, um vertikalen Zeilenumbruch strictly zu verhindern.
-        parts = [todo_badge]
-        if term_w >= 118 or moodle_cnt > 0:
-            parts.append(f"🎓 Moodle: {moodle_cnt}")
-        if term_w >= 118 or teams_cnt > 0:
-            parts.append(f"👥 Teams: {teams_cnt}")
-        if term_w >= 118 or manual_cnt > 0:
-            parts.append(f"✏️ Manual: {manual_cnt}")
+            next_exam = get_next_upcoming_exam()
+            exam_badge = ""
+            if next_exam:
+                try:
+                    _ndt = datetime.datetime.strptime(next_exam.date, "%Y-%m-%d").date()
+                    next_date_short = f"{_ndt.day:02d}.{_ndt.month:02d}."
+                except Exception:
+                    next_date_short = next_exam.date_display
+                exam_badge = f"📝 Next: [bold dodger_blue1]{next_date_short} {next_exam.subject}[/bold dodger_blue1] [bold green]{next_exam.countdown_display}[/bold green]"
 
-        if exam_badge:
-            parts.append(exam_badge)
+            if term_w_override is not None and term_w_override > 0:
+                term_w = term_w_override
+            else:
+                try:
+                    term_w = self.size.width - 2 if (self.size and self.size.width > 0) else 121
+                except Exception:
+                    term_w = 121
 
-        parts.append(f"🕒 Sync: {sync_time_str}")
+            parts = [todo_badge]
+            if term_w >= 118 or moodle_cnt > 0:
+                parts.append(f"🎓 Moodle: {moodle_cnt}")
+            if term_w >= 118 or teams_cnt > 0:
+                parts.append(f"👥 Teams: {teams_cnt}")
+            if term_w >= 118 or manual_cnt > 0:
+                parts.append(f"✏️ Manual: {manual_cnt}")
 
-        sep = "  |  " if term_w >= 122 and not (next_exam and term_w < 135) else " | "
-        stats_text = sep.join(parts)
-        self.query_one("#info_stats", Label).update(stats_text)
+            if exam_badge:
+                parts.append(exam_badge)
+
+            parts.append(f"🕒 Sync: {sync_time_str}")
+
+            sep = "  |  " if term_w >= 122 and not (next_exam and term_w < 135) else " | "
+            stats_text = sep.join(parts)
+            self.query_one("#info_stats", Label).update(stats_text)
+        except Exception:
+            pass
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Click with mouse or ENTER on a row opens details view."""
@@ -7610,8 +7623,18 @@ class AufgabenDetectorApp(App):
             except Exception:
                 pass
 
+            def on_batch_update():
+                now = time.time()
+                # Throttling: Bei rascher Folge nur alle 0.8s die Tabelle leeren/neu zeichnen,
+                # ansonsten nur die Statistik im Info-Bar aktualisieren, um ConPTY-Lags zu vermeiden.
+                if now - getattr(self, "_last_sync_table_refresh", 0.0) >= 0.8:
+                    self._last_sync_table_refresh = now
+                    self.call_from_thread(self.refresh_table)
+                else:
+                    self.call_from_thread(self.update_info_bar)
+
             try:
-                self.mgr.sync(deep_scan=False, on_batch_complete=lambda: self.call_from_thread(self.refresh_table))
+                self.mgr.sync(deep_scan=False, on_batch_complete=on_batch_update)
             except Exception:
                 pass
 
@@ -8003,7 +8026,7 @@ class AufgabenDetectorApp(App):
         user32 = ctypes.windll.user32
         prev_pressed = False
         while not self._stop_mouse_listener.is_set():
-            time.sleep(0.025)
+            time.sleep(0.06)
             try:
                 # Prüfe ob Taste 4 (XBUTTON1) gedrückt ist (MSB = 1)
                 is_pressed = bool(user32.GetAsyncKeyState(VK_XBUTTON1) & 0x8000)
@@ -8102,8 +8125,9 @@ def run_tui():
                 save_saved_theme(app.theme)
             except Exception:
                 pass
+    return getattr(app, "return_code", 0) or 0
 
 
 if __name__ == "__main__":
-    run_tui()
-    sys.exit(0)
+    code = run_tui()
+    sys.exit(code or 0)

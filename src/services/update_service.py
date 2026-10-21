@@ -18,6 +18,8 @@ from src.core.config import APP_VERSION, GITHUB_REPO, WORKSPACE_DIR
 
 logger = logging.getLogger(__name__)
 
+UPDATE_EXIT_CODE = 42
+
 
 def parse_version(v_str: str) -> Tuple[int, ...]:
     """
@@ -210,36 +212,46 @@ def download_update_installer(
 
 def launch_update_and_restart(installer_path: str, app_dir: Optional[str] = None) -> bool:
     """
-    Erstellt ein entkoppeltes Update-Skript in %TEMP% und führt es im Hintergrund aus.
-    Installiert die neue Version stillschweigend im selben Ordner ohne PATH-Änderung,
-    aktualisiert Bibliotheken und startet die App neu.
+    Bereitet das Update vor:
+    Schreibt die Pfadangabe des Installers in eine Pending-Datei für run.bat.
+    Wurde die App über run.bat gestartet, übernimmt run.bat das Update direkt im selben Terminal.
+    Andernfalls wird ein schlanker Fallback-Prozess (ohne PowerShell und ohne setup.bat) ausgeführt.
     """
     target_app_dir = app_dir or WORKSPACE_DIR
     temp_dir = get_update_temp_dir()
-    runner_script = os.path.join(temp_dir, "apply_update.cmd")
+    pending_file = os.path.join(temp_dir, "pending_update.txt")
+    update_applied_file = os.path.join(temp_dir, "update_just_applied.txt")
 
+    try:
+        with open(pending_file, "w", encoding="utf-8") as f:
+            f.write(os.path.abspath(installer_path))
+    except Exception as e:
+        logger.error("Fehler beim Schreiben von pending_update.txt: %s", e)
+        return False
+
+    runner_script = os.path.join(temp_dir, "apply_update.cmd")
     script_content = f"""@echo off
 chcp 65001 >nul
 title Aufgaben-Detector Update
 
-:: 1. Kurz warten, bis der aktuelle Python-Prozess beendet ist und Dateisperren freigegeben sind
-powershell -NoProfile -Command "Start-Sleep -Seconds 2"
+:: 1. Kurz warten bis der Python-Prozess beendet ist
+timeout /t 2 /nobreak >nul 2>nul
+if %errorlevel% neq 0 ping 127.0.0.1 -n 3 >nul
 
 :: 2. Inno Setup Installer stillschweigend ausfuehren (/NOTASKS=1 verhindert PATH-Aenderung)
 "{installer_path}" /DIR="{target_app_dir}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOTASKS=1 /UPDATE=1
 
-:: 3. Python-Bibliotheken pruefen und aktualisieren falls noetig
-if exist "{target_app_dir}\\setup.bat" (
-    call "{target_app_dir}\\setup.bat" /silent
-)
+:: 3. Update-Marker setzen
+echo 1 > "{update_applied_file}" 2>nul
 
-:: 4. Anwendung wieder starten
+:: 4. Temporaeren Installer und Flag bereinigen
+del /f /q "{installer_path}" 2>nul
+del /f /q "{pending_file}" 2>nul
+
+:: 5. Anwendung wieder starten
 if exist "{target_app_dir}\\run.bat" (
     start "" "{target_app_dir}\\run.bat"
 )
-
-:: 5. Temporaeren Installer bereinigen
-del /f /q "{installer_path}" 2>nul
 exit
 """
 
@@ -247,10 +259,13 @@ exit
         with open(runner_script, "w", encoding="utf-8") as f:
             f.write(script_content)
 
-        # Detached background process starten
+        # Wenn run.bat aktiv ist, handhabt run.bat das Update direkt im gleichen Terminal
+        if os.environ.get("RUN_FROM_BATCH") == "1":
+            return True
+
+        # Fallback für manuelle / eigenständige Python-Aufrufe
         creation_flags = 0
         if sys.platform == "win32":
-            # DETACHED_PROCESS (0x00000008) | CREATE_NEW_PROCESS_GROUP (0x00000200)
             creation_flags = 0x00000008 | 0x00000200
 
         subprocess.Popen(

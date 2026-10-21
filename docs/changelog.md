@@ -11,6 +11,31 @@ und dieses Projekt hält sich an [Semantic Versioning](https://semver.org/lang/d
 
 ---
 
+## [1.0.10] - 2026-10-21
+
+### Added
+- **Sync Performance & TUI Responsiveness Boost**:
+  - `SyncSpinner` Animationsfrequenz von 80 ms (12,5 FPS) auf schonende 250 ms (4 FPS) reduziert, um Windows ConPTY ANSI-Terminalbelastung und Asyncio Event-Loop Verstopfung zu beheben.
+  - Entkoppelte UI-Statistikaktualisierung (`update_info_bar`) mit 0,8 s Throttling für `refresh_table`, sodass schnelle Plattform-Syncs die `DataTable` nicht mehrfach pro Sekunde verwerfen.
+  - Nicht-blockierendes Caching in `TaskManager.save_cache()` (Festplattenzugriff außerhalb des Cache-Locks) und gebündeltes Schreiben im `_prefetch_worker` (alle 5 Aufgaben statt nach jeder einzelnen).
+  - Playwright Headless Chromium Optimierung mit `--disable-gpu`, `--disable-dev-shm-usage` und `--renderer-process-limit=2` für ressourcenschonenden Teams-Sync.
+- **Automatisches Wiederherstellen der Getting-Started-Aufgabe bei Updates**:
+  - `TaskManager._check_and_apply_version_update` erkennt Versions-Updates und stellt die Setup-Aufgabe (`manual_welcome_setup_guide`) automatisch wieder her.
+  - Falls die Aufgabe zuvor als erledigt markiert oder gelöscht (`deleted_manual_ids`) wurde, wird sie ent-löscht, auf den Status `Open` zurückgesetzt und ganz oben platziert.
+- **In-Terminal Update-Loop in `run.bat`**:
+  - Fängt den Update-Exit-Code `42` sowie `%TEMP%\AufgabenDetector_Update\pending_update.txt` nativ im aktiven Konsolenfenster ab.
+  - Führt das Setup stillschweigend (`start /wait`) im gleichen Terminal aus und startet `main.py` ohne externe Fenster oder Unterbrechungen neu.
+
+### Changed
+- **Getting Started Aufgabe auf Englisch & Button-basiert**:
+  - Sämtliche Hotkey-Angaben wurden durch präzise Verweise auf die realen UI-Buttons ersetzt (`⚙️ Settings`, `⚙️ School & Student Config`, `🔑 Login`, `👥 Teams Login`, `🎓 Moodle Login`, `📅 WebUntis Login`, `🐙 Git Cloud-Sync`, `🔄 Sync`, `✓ Mark as Completed`, `🗑️ Delete`).
+  - Vollständige Überarbeitung der Aufgabenbeschreibung in verständlichem Englisch.
+- **Keine redundante Bibliotheksinstallation bei Updates**:
+  - `setup.bat /silent` wurde vollständig aus dem Update-Prozess entfernt, da `dependency_checker.py` fehlende Bibliotheken automatisch beim Start von `main.py` prüft und bereitstellt.
+  - Entfernung von `powershell`-Aufrufen beim Update-Prozess.
+
+---
+
 ## [1.0.9] - 2026-10-20
 
 ### Added

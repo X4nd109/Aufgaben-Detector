@@ -148,6 +148,9 @@ class TaskManager:
         # wird die Getting-Started-Aufgabe immer garantiert geladen und angezeigt!
         self._ensure_welcome_task_on_first_run()
 
+        # Nach einem Versions-Update: Welcome-Aufgabe garantieren (ent-löschen & auf Open zurücksetzen)
+        self._check_and_apply_version_update()
+
         if (loaded or custom) and self.autostart_prefetch:
             self.start_background_prefetch()
 
@@ -168,21 +171,96 @@ class TaskManager:
             description=(
                 "Welcome to Aufgaben Detector!\n\n"
                 "Please complete your initial setup:\n"
-                "1. First, configure your student profile by pressing [C] (set your name, class, and school details).\n"
-                "2. Next, sign in to your school platforms:\n"
-                "   - Press [T] to set up / sign in to Microsoft Teams\n"
-                "   - Press [M] to sign in to Moodle\n"
-                "   - Press [U] to sign in to WebUntis\n"
-                "3. Set up Git Cloud-Sync to sync tasks & exams across PC and Laptop:\n"
+                "1. Student Profile: Click the '⚙️ Settings' button in the bottom bar, then click '⚙️ School & Student Config' (set your name, class, and school details).\n"
+                "2. School Platform Logins: Click '⚙️ Settings', then click '🔑 Login':\n"
+                "   - Click '👥 Teams Login' to sign in to Microsoft Teams\n"
+                "   - Click '🎓 Moodle Login' to sign in to Moodle\n"
+                "   - Click '📅 WebUntis Login' to sign in to WebUntis\n"
+                "3. Git Cloud-Sync (sync tasks & exams across PC and Laptop):\n"
                 "   - Create a private repository on GitHub (e.g. 'aufgaben-backup')\n"
                 "   - Generate a Personal Access Token (PAT) with 'repo' permissions\n"
-                "   - In the app, press [L] -> [G] (or open Logins) and enter your Repo URL & Token\n"
-                "4. Press [R] to sync and detect all your assignments!\n\n"
-                "Tip: Press [Space] to mark this task as completed, or press [D] to delete it."
+                "   - In the app, click '⚙️ Settings' -> '🔑 Login' -> '🐙 Git Cloud-Sync', and enter your Repo URL & Token\n"
+                "4. Synchronize: Click the '🔄 Sync' button in the bottom bar to fetch and detect all your assignments!\n\n"
+                "Tip: Click '✓ Mark as Completed' below to finish this guide, or '🗑️ Delete' to remove it."
             ),
             details_loaded=True,
             due_timestamp=now_ts + 86400 * 2,
         )
+
+    def _check_and_apply_version_update(self) -> None:
+        """Prüft, ob die Anwendung aktualisiert wurde (neue APP_VERSION oder Update-Flag).
+        Falls ja, wird die Getting-Started-Aufgabe ent-löscht, aktualisiert und als Open an den Anfang gesetzt.
+        """
+        import tempfile
+        from config import APP_VERSION, CONFIG_DIR, DATA_DIR
+        version_files = [
+            os.path.join(DATA_DIR, "last_version.txt"),
+            os.path.join(CONFIG_DIR, "last_version.txt"),
+        ]
+        last_version = None
+        for vf in version_files:
+            if os.path.exists(vf):
+                try:
+                    with open(vf, "r", encoding="utf-8") as f:
+                        last_version = f.read().strip()
+                        if last_version:
+                            break
+                except Exception:
+                    pass
+
+        # Update-Flag aus In-App Update Runner prüfen
+        update_flag = os.path.join(tempfile.gettempdir(), "AufgabenDetector_Update", "update_just_applied.txt")
+        has_update_flag = os.path.exists(update_flag)
+        if has_update_flag:
+            try:
+                os.remove(update_flag)
+            except Exception:
+                pass
+
+        markers = [
+            os.path.join(CONFIG_DIR, ".first_run_completed"),
+            os.path.join(DATA_DIR, ".first_run_completed"),
+        ]
+        has_first_run_marker = any(os.path.exists(m) for m in markers)
+
+        is_update = has_update_flag or (last_version is not None and last_version != APP_VERSION) or (last_version is None and has_first_run_marker)
+
+        # Version persistieren
+        for vf in version_files:
+            try:
+                os.makedirs(os.path.dirname(vf), exist_ok=True)
+                with open(vf, "w", encoding="utf-8") as f:
+                    f.write(APP_VERSION)
+            except Exception:
+                pass
+
+        if is_update:
+            welcome_id = "manual_welcome_setup_guide"
+            welcome_task = self.create_welcome_task()
+            with self._cache_lock:
+                # 1. Aus gelöschten Listen austragen
+                if welcome_id in self.deleted_manual_ids:
+                    self.deleted_manual_ids.discard(welcome_id)
+                    self.save_deleted_manual_tasks(auto_push=False)
+                if welcome_id in self.hidden_ids:
+                    self.hidden_ids.discard(welcome_id)
+                    self.save_hidden_tasks(auto_push=False)
+
+                # 2. In den Aufgaben wiederherstellen / auf Open setzen
+                existing = next((t for t in self.tasks if t.id == welcome_id), None)
+                if existing:
+                    existing.status = "open"
+                    existing.status_display = "Open"
+                    existing.title = welcome_task.title
+                    existing.description = welcome_task.description
+                    existing.course_full = welcome_task.course_full
+                    existing.due_date_str = welcome_task.due_date_str
+                    existing.due_timestamp = welcome_task.due_timestamp
+                else:
+                    self.tasks.insert(0, welcome_task)
+
+                self.tasks.sort(key=task_sort_key)
+                self.save_custom_tasks(auto_push=False)
 
     def _ensure_welcome_task_on_first_run(self) -> None:
         """Stellt sicher, dass beim allerersten Start einer Installation immer die Welcome-Aufgabe existiert."""
@@ -497,19 +575,19 @@ class TaskManager:
             return False
 
     def save_cache(self):
-        """Saves current task cache to disk."""
-        with self._cache_lock:
-            try:
-                self.save_custom_tasks(auto_push=False)
-                os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+        """Saves current task cache to disk with minimal lock holding time."""
+        try:
+            self.save_custom_tasks(auto_push=False)
+            with self._cache_lock:
                 data = {
                     "last_sync": self.last_sync or time.time(),
                     "tasks": [t.to_dict() for t in self.tasks]
                 }
-                with open(CACHE_FILE, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-            except Exception as e:
-                print(f"Warning: Could not save cache: {e}", file=sys.stderr)
+            os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+            with open(CACHE_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"Warning: Could not save cache: {e}", file=sys.stderr)
 
     def start_background_prefetch(self):
         """Startet den Hintergrund-Thread zum schrittweisen Vorabladen aller Aufgaben-Details."""
@@ -546,6 +624,7 @@ class TaskManager:
             time.sleep(0.1)
 
         attempted_ids = set()
+        batch_counter = 0
 
         while not self._stop_prefetch and not getattr(self, "_is_shutting_down", False):
             target_task = None
@@ -580,14 +659,26 @@ class TaskManager:
                     target_task.due_timestamp = parse_deadline_for_sorting(target_task.due_date_str)
                     if not target_task.teacher or target_task.teacher in ["-", "GRO", "AIC"] or target_task.course == "UFW":
                         target_task.teacher = extract_teacher(target_task.course_full, target_task.course, target_task.title, target_task.description)
+
+                # Disk I/O bündeln (alle 5 Aufgaben), um den UI-Thread nicht mit ständigen Schreibvorgängen zu belasten
+                batch_counter += 1
+                if batch_counter >= 5:
                     self.save_cache()
+                    batch_counter = 0
             except Exception:
                 pass
 
-            for _ in range(4):
+            for _ in range(5):
                 if self._stop_prefetch or getattr(self, "_is_shutting_down", False):
                     break
                 time.sleep(0.1)
+
+        # Letzter Cache-Flush am Ende des Prefetch-Durchlaufs
+        if batch_counter > 0 and not getattr(self, "_is_shutting_down", False):
+            try:
+                self.save_cache()
+            except Exception:
+                pass
 
     def _merge_platform_tasks(self, new_tasks: List[Task], platform: str):
         """Führt Aufgaben einer einzelnen Plattform sofort in den Bestand ein und speichert den Cache."""

@@ -1,11 +1,25 @@
 # Current Project State & Session Handoff — Aufgaben-Detector
 
-> **Last Updated**: 2026-10-20  
-> **Active Milestone**: Milestone 3 — In-App Auto-Update & High-DPI UI Polish (v1.0.9)
+> **Last Updated**: 2026-10-21  
+> **Active Milestone**: Milestone 3 — In-App Auto-Update, Sync Performance & UI Polish (v1.0.10)
 
 ---
 
 ## 1. Completed Tasks & Milestones
+
+- [x] **Sync Performance & TUI Lag Optimization (v1.0.10)**:
+  - **SyncSpinner Interval Throttling**: TUI-Ladeanimation (`SyncSpinner`) von aggressiven 80 ms (12,5 FPS) auf 250 ms (4 FPS) gedrosselt. Verhindert die Überlastung des Textual Asyncio-Event-Loops und von Windows ConPTY ANSI-Rerenders bei gleichzeitiger Hintergrundarbeit.
+  - **Batch-UI-Aktualisierung & Throttling**: Entkopplung der Daten-Tabelle via `update_info_bar()`. Mehrere schnell aufeinanderfolgende Sync-Callbacks von Moodle und Teams leeren und zeichnen die 40+ Zeilen der `DataTable` nur maximal einmal alle 0,8 Sekunden neu; dazwischen wird lediglich die Info-Statistikzeile aktualisiert.
+  - **Entsperrte Cache-Persistenz & Batch-Disk-Writes**: `TaskManager.save_cache()` kopiert den Speicherzustand unter Lock und schreibt atomar auf die Festplatte *ohne* Lock, wodurch kein anderer Thread blockiert wird. Im Hintergrund-Prefetcher (`_prefetch_worker`) werden Cache-Saves auf alle 5 Aufgaben gebündelt statt nach jeder einzelnen Aufgabe.
+  - **Playwright Headless Chromium Optimierung**: `--disable-gpu`, `--disable-dev-shm-usage`, `--renderer-process-limit=2` und Muting zu den Chromium-Headless-Flags hinzugefügt, wodurch die CPU-Last des Teams-Syncs minimiert wird.
+  - **Mouse-Back-Listener Schlafpause**: Polling-Intervall in `_run_mouse_back_listener` von 25 ms auf 60 ms relaxiert.
+
+- [x] **In-Terminal Update-Workflow & Getting-Started Restoration (v1.0.10 Polish)**:
+  - **Getting-Started Wiederherstellung bei Updates**: `TaskManager._check_and_apply_version_update` erkennt Versions-Updates (via `data/version.json` oder In-App Update Marker), entfernt `manual_welcome_setup_guide` aus `deleted_manual_ids`, setzt den Status auf `Open` zurück und platziert die Aufgabe an erster Stelle.
+  - **Button-zentrierte englische Anleitung**: Sämtliche Hotkey-Angaben wurden durch präzise Bezeichnungen der realen Textual UI-Buttons ersetzt (`⚙️ Settings`, `⚙️ School & Student Config`, `🔑 Login`, `👥 Teams Login`, `🎓 Moodle Login`, `📅 WebUntis Login`, `🐙 Git Cloud-Sync`, `🔄 Sync`, `✓ Mark as Completed`, `🗑️ Delete`).
+  - **Keine redundante Bibliotheksinstallation**: `setup.bat /silent` wurde aus dem Update-Prozess entfernt, da `dependency_checker.py` fehlende Abhängigkeiten automatisch beim App-Start prüft und installiert.
+  - **In-Terminal Update-Loop in `run.bat`**: `run.bat` fängt den Exit-Code `42` sowie `%TEMP%\AufgabenDetector_Update\pending_update.txt` ab, führt das Update via `start /wait` im aktuellen Konsolenfenster stillschweigend aus und startet die App direkt im selben Terminal neu (ohne PowerShell-Popups oder neue Konsolenfenster).
+  - 3 neue automatisierte Unit-Tests in `tests/test_update_service.py` (Gesamtsuite: 267 bestandene Tests mit 100 % Erfolgsquote).
 
 - [x] **Documentation Modernization**:
   - Replaced legacy documentation files with standardized 2-tier persistent memory structure.
@@ -169,13 +183,18 @@
 
 ## 3. Known Issues & Blockers
 
-- *None active* (All 264 test suite tests passing cleanly with 100% pass rate).
+- *None active* (All 267 test suite tests passing cleanly with 100% pass rate).
 
 ---
 
 ## 4. Session Handoff Notes (Context for Next Agent)
 
-- **Recent Achievements (2026-10-20 — Tesseract OCR-Optimierung & Digi4School Seitenauswahl v1.0.9)**:
+- **Recent Achievements (2026-10-21 — In-Terminal Update-Workflow, Getting-Started Polish & Sync Performance v1.0.10)**:
+  - Automatisches Wiederherstellen der Welcome-Aufgabe bei jedem Versionsupdate (`_check_and_apply_version_update`), inklusive Ent-Löschung und Status-Reset auf `Open`.
+  - Reine Button-Navigation auf Englisch in der Getting-Started-Aufgabe ohne Tastatur-Hotkeys.
+  - Nahtloser In-Terminal Update-Handoff in `run.bat` ohne separate PowerShell- oder CMD-Fenster.
+  - Entfernung der redundanten Bibliotheksinstallation während des Updates.
+  - 267 Tests in der Gesamtsuite mit 100 % Erfolgsquote.
   - Tesseract 5 OCR-Tuning: Sauvola-Binarisierung (`thresholding_method=2`), Strichdicken-Normierung (`classify_nonlinear_norm=1`), Unterstreichungstrennung (`textord_restore_underlines=1`) und Unsharp-Masking für 100 % Schärfe bei fettem und unterstrichenem Text.
   - Vollständiger modalgestützter Downloadflow mit automatischer Buchanalyse (`Digi4SchoolService.inspect_book`).
   - Kurzer Ladedialog `Digi4SchoolDetectModal` visualisiert die Vorab-Erkennung von Titel und Gesamtzahl der Seiten.

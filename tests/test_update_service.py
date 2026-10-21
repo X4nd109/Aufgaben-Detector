@@ -17,9 +17,9 @@ from tui_app import SettingsModal, UpdateReminderModal, AufgabenDetectorApp
 class TestUpdateService(unittest.TestCase):
     def test_get_app_version(self):
         """Prüft die zentrale Versionskonfiguration."""
-        self.assertEqual(APP_VERSION, "1.0.9")
-        self.assertEqual(get_app_version(prefix=True), "v1.0.9")
-        self.assertEqual(get_app_version(prefix=False), "1.0.9")
+        self.assertEqual(APP_VERSION, "1.0.10")
+        self.assertEqual(get_app_version(prefix=True), "v1.0.10")
+        self.assertEqual(get_app_version(prefix=False), "1.0.10")
 
     def test_parse_version(self):
         """Prüft das Parsen diverser Versions-Strings in Zahlentupel."""
@@ -186,16 +186,26 @@ class TestUpdateService(unittest.TestCase):
 
     @patch("subprocess.Popen")
     def test_launch_update_and_restart(self, mock_popen):
-        """Prüft Skript-Generierung und Runner-Aufruf mit /NOTASKS=1 und /UPDATE=1."""
+        """Prüft Skript-Generierung und Runner-Aufruf ohne PowerShell und ohne setup.bat."""
         import tempfile
         import os
         from src.services.update_service import launch_update_and_restart, get_update_temp_dir
+
+        # Ensure RUN_FROM_BATCH is not set for fallback testing
+        os.environ.pop("RUN_FROM_BATCH", None)
 
         with tempfile.TemporaryDirectory() as fake_app:
             installer_path = os.path.join(fake_app, "AufgabenDetector_Setup.exe")
             ok = launch_update_and_restart(installer_path, app_dir=fake_app)
             self.assertTrue(ok)
 
+            # 1. Pending update file created
+            pending_file = os.path.join(get_update_temp_dir(), "pending_update.txt")
+            self.assertTrue(os.path.exists(pending_file))
+            with open(pending_file, "r", encoding="utf-8") as f:
+                self.assertEqual(f.read().strip(), os.path.abspath(installer_path))
+
+            # 2. Fallback cmd script generated without PowerShell and without setup.bat
             cmd_file = os.path.join(get_update_temp_dir(), "apply_update.cmd")
             self.assertTrue(os.path.exists(cmd_file))
             with open(cmd_file, "r", encoding="utf-8") as f:
@@ -204,9 +214,97 @@ class TestUpdateService(unittest.TestCase):
             self.assertIn("/UPDATE=1", content)
             self.assertIn("/VERYSILENT", content)
             self.assertIn(f'/DIR="{fake_app}"', content)
-            self.assertIn("setup.bat", content)
+            self.assertNotIn("setup.bat", content)
+            self.assertNotIn("powershell", content.lower())
             self.assertIn("run.bat", content)
             mock_popen.assert_called_once()
+
+    @patch("subprocess.Popen")
+    def test_launch_update_and_restart_from_run_bat(self, mock_popen):
+        """Prüft, dass bei RUN_FROM_BATCH=1 kein Subprocess gestartet wird (Handhabung im selben Terminal)."""
+        import tempfile
+        import os
+        from src.services.update_service import launch_update_and_restart, get_update_temp_dir
+
+        os.environ["RUN_FROM_BATCH"] = "1"
+        try:
+            with tempfile.TemporaryDirectory() as fake_app:
+                installer_path = os.path.join(fake_app, "AufgabenDetector_Setup.exe")
+                ok = launch_update_and_restart(installer_path, app_dir=fake_app)
+                self.assertTrue(ok)
+
+                # Pending file exists
+                pending_file = os.path.join(get_update_temp_dir(), "pending_update.txt")
+                self.assertTrue(os.path.exists(pending_file))
+
+                # Subprocess Popen must NOT have been called (run.bat handles execution)
+                mock_popen.assert_not_called()
+        finally:
+            os.environ.pop("RUN_FROM_BATCH", None)
+
+    def test_welcome_task_english_buttons_text(self):
+        """Prüft, dass die Getting Started Aufgabe rein auf Englisch verfasst ist und UI-Buttons referenziert."""
+        from src.core.task_manager import TaskManager
+        task = TaskManager.create_welcome_task()
+        self.assertEqual(task.id, "manual_welcome_setup_guide")
+        self.assertEqual(task.course_full, "Getting Started")
+        self.assertEqual(task.status, "open")
+        desc = task.description
+
+        # Button-Verweise
+        self.assertIn("Settings", desc)
+        self.assertIn("School & Student Config", desc)
+        self.assertIn("Teams Login", desc)
+        self.assertIn("Moodle Login", desc)
+        self.assertIn("WebUntis Login", desc)
+        self.assertIn("Git Cloud-Sync", desc)
+        self.assertIn("Sync", desc)
+        self.assertIn("Mark as Completed", desc)
+        self.assertIn("Delete", desc)
+
+        # Keine veralteten Hotkey-Klammern
+        self.assertNotIn("pressing [C]", desc)
+        self.assertNotIn("Press [T]", desc)
+        self.assertNotIn("Press [M]", desc)
+        self.assertNotIn("Press [U]", desc)
+        self.assertNotIn("Press [R]", desc)
+        self.assertNotIn("Press [Space]", desc)
+
+    def test_welcome_task_restored_on_update(self):
+        """Prüft, dass beim Update die Getting-Started-Aufgabe ent-löscht und auf Open zurückgesetzt wird."""
+        from src.core.task_manager import TaskManager
+        from src.core.models import Task
+        import tempfile
+        import os
+
+        mgr = TaskManager(autostart_prefetch=False)
+        welcome_id = "manual_welcome_setup_guide"
+
+        # Simuliere gelöschte Welcome-Aufgabe
+        mgr.deleted_manual_ids.add(welcome_id)
+        mgr.tasks = [t for t in mgr.tasks if t.id != welcome_id]
+
+        # Simuliere Update-Flag
+        update_dir = os.path.join(tempfile.gettempdir(), "AufgabenDetector_Update")
+        os.makedirs(update_dir, exist_ok=True)
+        flag_file = os.path.join(update_dir, "update_just_applied.txt")
+        with open(flag_file, "w") as f:
+            f.write("1")
+
+        # Führe Update-Prüfung aus
+        mgr._check_and_apply_version_update()
+
+        # 1. Muss aus gelöschten Aufgaben entfernt worden sein
+        self.assertNotIn(welcome_id, mgr.deleted_manual_ids)
+
+        # 2. Muss in tasks vorhanden und Open sein
+        welcome = next((t for t in mgr.tasks if t.id == welcome_id), None)
+        self.assertIsNotNone(welcome)
+        self.assertEqual(welcome.status, "open")
+        self.assertEqual(welcome.status_display, "Open")
+
+        # 3. Flag muss bereinigt worden sein
+        self.assertFalse(os.path.exists(flag_file))
 
 
 class TestUpdateUI(unittest.IsolatedAsyncioTestCase):

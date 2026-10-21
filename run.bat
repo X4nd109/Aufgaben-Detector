@@ -3,6 +3,10 @@ setlocal enabledelayedexpansion
 chcp 65001 >nul
 title Aufgaben-Detector
 
+set "RUN_FROM_BATCH=1"
+set "UPDATE_FLAG_FILE=%TEMP%\AufgabenDetector_Update\pending_update.txt"
+set "UPDATE_APPLIED_FILE=%TEMP%\AufgabenDetector_Update\update_just_applied.txt"
+
 cls
 
 REM -----------------------------------------------------------------
@@ -52,11 +56,48 @@ if not defined PYTHON_EXE (
     exit /b 9009
 )
 
-REM Programm ausfuehren
+REM -----------------------------------------------------------------
+REM Programm-Ausfuehrungsschleife (ermoeglicht In-Terminal-Updates)
+REM -----------------------------------------------------------------
+:run_loop
 "%PYTHON_EXE%" "%~dp0main.py" %*
+set "APP_EXIT_CODE=%ERRORLEVEL%"
 
-if %ERRORLEVEL% NEQ 0 (
+REM Pruefe, ob ein In-App-Update angefordert wurde (Exit-Code 42 oder Pending-Datei)
+if %APP_EXIT_CODE% equ 42 goto :do_update
+if exist "%UPDATE_FLAG_FILE%" goto :do_update
+goto :after_run
+
+:do_update
+set "INSTALLER_EXE="
+if exist "%UPDATE_FLAG_FILE%" (
+    set /p INSTALLER_EXE=<"%UPDATE_FLAG_FILE%"
+)
+if not defined INSTALLER_EXE (
+    set "INSTALLER_EXE=%TEMP%\AufgabenDetector_Update\AufgabenDetector_Setup.exe"
+)
+
+echo.
+echo =======================================================
+echo  [*] Aktualisiere Aufgaben-Detector im gleichen Fenster...
+echo =======================================================
+echo.
+
+if exist "!INSTALLER_EXE!" (
+    start /wait "" "!INSTALLER_EXE!" /DIR="%~dp0." /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOTASKS=1 /UPDATE=1
+    del /f /q "!INSTALLER_EXE!" 2>nul
+)
+del /f /q "%UPDATE_FLAG_FILE%" 2>nul
+
+REM Marker setzen, damit die App das Update beim Start erkennt
+echo 1 > "%UPDATE_APPLIED_FILE%" 2>nul
+
+cls
+goto :run_loop
+
+:after_run
+if %APP_EXIT_CODE% NEQ 0 (
     echo.
-    echo Programm beendet mit Fehlercode %ERRORLEVEL%
+    echo Programm beendet mit Fehlercode %APP_EXIT_CODE%
     pause
 )
