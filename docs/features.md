@@ -27,12 +27,12 @@
 | `ExcuseLetterModal` (`[U]`) | Modal | Fehlstunden-Übersicht mit Stundenplan-Abgleich und 1-Klick-PDF-Export für die Schule. |
 | `ExamDetailModal` | Modal | Zeigt Prüfungsdetails und ermöglicht das Bearbeiten persönlicher Stoff-Notizen (`exam_notes.json`). |
 | `AddExamModal` | Modal | Formular zum Eintragen manueller Prüfungstermine mit nativer Wochentagserkennung. |
-| `SettingsModal` (`[O]`) | Modal | Scrollbarer Konfigurationsdialog mit Versionsanzeige in der oberen rechten Ecke (`v1.0.10`), Themes, Logins und Schülereinstellungen. |
+| `SettingsModal` (`[O]`) | Modal | Scrollbarer Konfigurationsdialog mit Versionsanzeige in der oberen rechten Ecke (`v1.0.11`), Themes, Logins und Schülereinstellungen. |
 | `UpdateReminderModal` | Modal | Popup-Erinnerung bei neueren GitHub-Releases mit 1-Klick-In-App-Download, Fortschrittsbalken und automatischer Installation im selben Verzeichnis (ohne PATH-Änderung oder Datenverlust). |
 | `LoginChoiceModal` (`[L]`) | Modal | Zentrales Auswahlmenü für Anmeldungen bei Moodle, Microsoft Teams und WebUntis. |
 | `TeamsSetupModal` | Modal | Geführter Teams-Login via Playwright-Chromium mit Passkey-, 2FA- oder Kennwort-Unterstützung. |
-| `MoodleLoginModal` | Modal | Eingabe von Moodle-Benutzername und Passwort mit automatischer Session-Cookie-Speicherung. |
-| `UntisSetupModal` | Modal | Konfiguration von WebUntis-Schulname, Benutzer und Passwort. |
+| `MoodleLoginModal` | Modal | Eingabe von Moodle-Benutzername (oder E-Mail mit automatischem Domain-Stripping) und Passwort mit blitzschneller HTTP-Authentifizierung und Fehleranzeige. |
+| `UntisSetupModal` | Modal | Konfiguration von WebUntis-Schulname (Standard: spengergasse, Domain-Bereinigung & API-Suche), Benutzer und Passwort mit exakter Fehlerrückmeldung. |
 | `GitSetupModal` | Modal | Einrichtungsdialog für cloudbasierten Git-Sync über privates Repository mit Token-Verschleierung. |
 | `SchoolbookUrlModal` | Modal | Dialog zur Vergabe von Buchtitel und Web-URL für digitale Schulbücher. |
 | `Digi4SchoolDownloadModal` | Modal | Anmelde- und Zugangscode-Eingabe für den automatischen Digi4School-Buchdownload. |

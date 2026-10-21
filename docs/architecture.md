@@ -94,7 +94,7 @@ Aufgaben Detector/
 ├── src/
 │   ├── core/                   # System core & data management
 │   │   ├── agent_cli.py        # Token-efficient headless CLI engine
-│   │   ├── auth.py             # Interactive authentication handlers
+│   │   ├── auth.py             # HTTP direct & interactive authentication (Moodle HTTP, Teams browser)
 │   │   ├── config.py           # Paths, color palettes, favorite themes & normalization
 │   │   ├── dependency_checker.py # Pre-flight module checker & warning banner
 │   │   ├── license.py          # Legacy hardware fingerprinting / compatibility
@@ -109,12 +109,13 @@ Aufgaben Detector/
 │   │   ├── schoolbook_service.py # Schoolbook indexing, opening & file picker
 │   │   ├── digi4school_service.py # Digi4School book downloader, OCR & TOC generator
 │   │   ├── teams_service.py    # Playwright MS Teams scraper
-│   │   ├── untis_service.py    # WebUntis JSON-RPC client
+│   │   ├── untis_service.py    # WebUntis JSON-RPC client, schoolquery2 resolver & timetable/absence matcher
 │   │   └── update_service.py   # GitHub release update checker, in-app downloader & runner
 │   └── ui/                     # Presentation implementations
 │       ├── tui_app.py          # Interactive Textual TUI
 │       └── ui.py               # Rich terminal rendering utilities
 ├── tests/                      # Automated test suite (pytest / unittest)
+│   ├── test_auth_logins.py     # Unit tests for Moodle HTTP & Untis login & server resolution
 │   ├── test_schoolbooks.py     # Unit tests for schoolbooks & git isolation
 │   ├── test_digi4school.py     # Unit tests for Digi4School downloader & CLI
 │   ├── test_dependency_checker.py # Unit tests for pre-flight dependency checker

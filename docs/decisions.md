@@ -322,3 +322,33 @@ This document records high-impact architectural choices, library selections, and
 - **Consequences**:
   - Positive: Zero UI lag during sync; responsive 60 FPS interactions; clean in-terminal update without secondary popups; automatic onboarding guide recovery.
   - Negative: Table rows during multi-platform sync update at up to 0.8s intervals rather than per item (status bar updates immediately).
+
+---
+
+## ADR-020: Browserless HTTP Moodle Authentication & Resilient WebUntis Discovery
+
+- **Date**: 2026-10-21
+- **Status**: Accepted
+- **Context**:
+  1. On freshly set up devices where users simply ran `pip install -r requirements.txt`, Moodle login failed because `login_moodle_direct` unconditionally invoked Playwright's headless Chromium (`p.chromium.launch(headless=True)`). The Playwright Python package does not install Chromium binaries by default (`~150MB` download), causing silent failures and misleading error messages.
+  2. WebUntis URL parsing was brittle: entering domains (`spengergasse.webuntis.com`) resulted in duplicated subdomains (`https://spengergasse.webuntis.com.webuntis.com`), and school display names with spaces (`HTL Spengergasse`) threw unhandled `InvalidURL` exceptions. Furthermore, leaving the school field empty failed instead of falling back to the configured school.
+  3. Students frequently enter their full school email address (`user@spengergasse.at`) rather than their student ID (`user`), which both Moodle and WebUntis API reject with `bad credentials`.
+- **Decision**:
+  1. **Pure HTTP Moodle Authentication (`login_moodle_http`)**:
+     - Perform direct HTTP form POST to `/login/index.php` using `requests.Session`.
+     - Dynamically extract the hidden CSRF `logintoken` from the login page.
+     - Persist `MoodleSession` cookies directly.
+     - Fall back to Playwright (with fallback channels: system Chrome, Edge, and Chromium) only if HTTP authentication fails or JS challenges are encountered.
+  2. **Resilient WebUntis Server Resolution (`resolve_webuntis_server`)**:
+     - Normalize school identifiers via `clean_school_identifier` to strip protocol, paths, and duplicated `.webuntis.com` domains.
+     - Integrate the official WebUntis School Search API (`https://mobile.webuntis.com/ms/schoolquery2`) to automatically look up `loginName` and official `serverUrl` when display names or spaces are provided.
+     - Default to the configured school (`spengergasse`) when the dialog school input is left blank.
+  3. **Automatic School Username Sanitization (`clean_school_username`)**:
+     - Strip school email domain suffixes (`@spengergasse.at` or any `@...`) before submitting credentials to Moodle and WebUntis.
+  4. **Rich Status Feedback (`AuthResult`)**:
+     - Return an `AuthResult` tuple subclass `(success: bool, message: str)` that propagates specific server error messages (e.g. invalid credentials, unreachable host) directly into TUI login status labels while maintaining 100% backward compatibility with boolean checks (`if res:`).
+  5. **Pre-Flight Playwright Chromium Detection**:
+     - Add `check_playwright_chromium_installed` via `p.chromium.executable_path` without process launches, and auto-install browser binaries during `run_pip_install` if missing.
+- **Consequences**:
+  - Positive: Moodle login works instantly (<0.3s) on any clean Python environment without needing a 150 MB Playwright Chromium download; WebUntis login accepts all common URL, domain, or display name formats; clear and actionable error messages in the UI; prevents user credential errors from email suffixes.
+  - Negative: If Moodle ever introduces JavaScript-heavy bot challenges or Captchas, the HTTP login will fail and trigger the heavier Playwright browser fallback.
