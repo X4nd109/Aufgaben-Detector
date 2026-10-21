@@ -4347,7 +4347,7 @@ class MoodleLoginModal(ModalScreen[bool]):
             yield Label("🎓 Moodle Login", id="moodle_title")
             yield Label("Credentials are stored locally on your PC only.", id="moodle_desc")
             yield Input(value=current_url, placeholder="Moodle URL (z.B. https://moodle.spengergasse.at)", id="inp_m_url", classes="m_input")
-            yield Input(placeholder="Username", id="inp_m_user", classes="m_input")
+            yield Input(placeholder="Username (e.g. end240102)", id="inp_m_user", classes="m_input")
             yield Input(placeholder="Password", password=True, id="inp_m_pass", classes="m_input")
             yield Label("", id="moodle_status")
             with Horizontal(id="moodle_buttons"):
@@ -4376,14 +4376,15 @@ class MoodleLoginModal(ModalScreen[bool]):
         self.query_one("#btn_m_submit", Button).disabled = True
 
         def worker():
-            success = login_moodle_direct(u, p, moodle_url=url)
+            res = login_moodle_direct(u, p, moodle_url=url)
             def update_ui():
                 self.query_one("#btn_m_submit", Button).disabled = False
-                if success:
+                if res.success:
                     self.app.notify("✓ Moodle successfully connected!", severity="information")
                     self.dismiss(True)
                 else:
-                    self.query_one("#moodle_status", Label).update("[red]✗ Login failed. Please check your credentials and URL.[/red]")
+                    err = res.message or "Login failed. Please check your credentials and URL."
+                    self.query_one("#moodle_status", Label).update(f"[red]✗ {err}[/red]")
             self.app.call_from_thread(update_ui)
 
         threading.Thread(target=worker, daemon=True, name="MoodleLoginWorker").start()
@@ -5079,8 +5080,8 @@ class UntisSetupModal(ModalScreen[bool]):
         with Vertical(id="untis_dialog"):
             yield Label("📅 WebUntis API Connection", id="untis_title")
             yield Label("Sign in with your school account:", id="untis_desc")
-            yield Input(placeholder="School name", id="inp_u_school", classes="untis_field")
-            yield Input(placeholder="Username", id="inp_u_user", classes="untis_field")
+            yield Input(placeholder="School name (default: spengergasse)", id="inp_u_school", classes="untis_field")
+            yield Input(placeholder="Username (e.g. end240102)", id="inp_u_user", classes="untis_field")
             yield Input(placeholder="Password", password=True, id="inp_u_pass", classes="untis_field")
             yield Label("", id="untis_status")
             with Horizontal(id="untis_buttons"):
@@ -5113,8 +5114,8 @@ class UntisSetupModal(ModalScreen[bool]):
         u = self.query_one("#inp_u_user", Input).value.strip()
         p = self.query_one("#inp_u_pass", Input).value.strip()
         if not sch:
-            self.query_one("#untis_status", Label).update("[red]Please enter your school name.[/red]")
-            return
+            from config import _load_untis_school, UNTIS_SCHOOL
+            sch = _load_untis_school() or UNTIS_SCHOOL or "spengergasse"
         if not u or not p:
             self.query_one("#untis_status", Label).update("[red]Please enter username and password.[/red]")
             return
@@ -5124,14 +5125,15 @@ class UntisSetupModal(ModalScreen[bool]):
 
         def worker():
             from untis_service import login_untis_direct
-            ok = login_untis_direct(u, p, school=sch)
+            res = login_untis_direct(u, p, school=sch)
             def update_ui():
                 self.query_one("#btn_u_login", Button).disabled = False
-                if ok:
+                if res.success:
                     self.app.notify("✓ WebUntis connected successfully!", severity="information")
                     self.dismiss(True)
                 else:
-                    self.query_one("#untis_status", Label).update("[red]✗ Login failed. Please check school and credentials.[/red]")
+                    err = res.message or "Login failed. Please check school and credentials."
+                    self.query_one("#untis_status", Label).update(f"[red]✗ {err}[/red]")
             self.app.call_from_thread(update_ui)
 
         threading.Thread(target=worker, daemon=True, name="UntisLoginWorker").start()
@@ -5162,14 +5164,15 @@ class UntisSetupModal(ModalScreen[bool]):
 
         def worker():
             from untis_service import login_untis_direct
-            ok = login_untis_direct(u, p, school=sch)
+            res = login_untis_direct(u, p, school=sch)
             def update_ui():
                 self.query_one("#btn_u_existing", Button).disabled = False
-                if ok:
+                if res.success:
                     self.app.notify("✓ WebUntis connected successfully!", severity="information")
                     self.dismiss(True)
                 else:
-                    self.query_one("#untis_status", Label).update("[red]✗ Moodle credentials invalid for WebUntis.[/red]")
+                    err = res.message or "Moodle credentials invalid for WebUntis."
+                    self.query_one("#untis_status", Label).update(f"[red]✗ {err}[/red]")
             self.app.call_from_thread(update_ui)
 
         threading.Thread(target=worker, daemon=True, name="UntisExistingWorker").start()

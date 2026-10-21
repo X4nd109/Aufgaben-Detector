@@ -11,6 +11,27 @@ und dieses Projekt hält sich an [Semantic Versioning](https://semver.org/lang/d
 
 ---
 
+## [1.0.11] - 2026-10-21
+
+### Added
+- **Browserloses HTTP-Moodle-Login (`login_moodle_http`)**:
+  - Moodle-Authentifizierung läuft primär über direkte HTTP-Requests (`requests.Session` mit dynamischer `logintoken`-Extraktion und Form-POST).
+  - Funktioniert in unter 0,3s ohne vorinstallierten Playwright-Chromium-Browser (behebt Login-Fehlschläge auf Geräten, auf denen nur `pip install -r requirements.txt` ausgeführt wurde).
+  - Automatischer Browser-Fallback mit System-Browsern (`chrome`, `msedge`, `chromium`) nur noch als sekundäre Stufe.
+- **WebUntis Schulsuche & Bereinigung (`search_webuntis_school`, `clean_school_identifier`)**:
+  - Automatische Erkennung und Bereinigung von Domains (`spengergasse.webuntis.com`), vollständigen URLs und Leerzeichen.
+  - Integration der offiziellen WebUntis School Search API (`https://mobile.webuntis.com/ms/schoolquery2`).
+  - Wenn das Schulfeld im Dialog leer gelassen wird, wird automatisch die Standard-Schule (`spengergasse`) verwendet.
+- **Automatisches Bereinigen von Schul-E-Mail-Adressen (`clean_school_username`)**:
+  - Falls Schüler ihre E-Mail-Adresse (`end240102@spengergasse.at`) statt der Schülerkennung eingeben, wird das Suffix `@...` automatisch entfernt.
+- **Präzise Fehlerrückmeldung im TUI**:
+  - `AuthResult` Tuple-Klasse transportiert den echten Server-Fehlertext von Moodle und WebUntis direkt in die Statuszeilen von `MoodleLoginModal` und `UntisSetupModal`.
+- **Playwright Chromium Pre-Flight Prüfung im `dependency_checker`**:
+  - Erkennt fehlende Browser-Binärdateien und stellt diese bei Bedarf bereit.
+- 7 neue automatisierte Unit-Tests in `tests/test_auth_logins.py` (Gesamtsuite: 274 Tests, 100 % Erfolgsquote).
+
+---
+
 ## [1.0.10] - 2026-10-21
 
 ### Added

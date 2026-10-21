@@ -31,6 +31,8 @@ from config import (
 from auth import (
     get_existing_untis_credentials,
     save_untis_credentials,
+    AuthResult,
+    clean_school_username,
 )
 from models import (
     UntisLesson,
@@ -135,44 +137,116 @@ def extract_exam_subgroup(raw_subj: str = "", name: str = "", text: str = "") ->
     return ""
 
 
+def clean_school_identifier(raw: str) -> str:
+    """
+    Bereinigt eine Schulkennung oder Schul-URL zu einer sauberen WebUntis-Kennung.
+    Beispiele:
+      'https://spengergasse.webuntis.com/WebUntis/?school=spengergasse' -> 'spengergasse'
+      'spengergasse.webuntis.com' -> 'spengergasse'
+      '  spengergasse  ' -> 'spengergasse'
+    """
+    if not raw:
+        return ""
+    s = raw.strip()
+    # Falls URL übergeben wurde
+    if "://" in s or "/" in s:
+        try:
+            if not s.startswith("http://") and not s.startswith("https://"):
+                s = "https://" + s
+            parsed = urlparse(s)
+            qs = parse_qs(parsed.query)
+            if "school" in qs and qs["school"]:
+                return qs["school"][0].strip()
+            if parsed.netloc and ".webuntis.com" in parsed.netloc:
+                sub = parsed.netloc.split(".")[0].lower()
+                if sub not in ["arche", "urania", "triton", "www", "webuntis", "api"]:
+                    return sub
+        except Exception:
+            pass
+
+    # Domain ohne Protokoll (z.B. spengergasse.webuntis.com)
+    if ".webuntis.com" in s.lower():
+        sub = s.lower().split(".webuntis.com")[0].split("/")[-1].split(":")[-1]
+        if sub and sub not in ["arche", "urania", "triton", "www", "webuntis", "api"]:
+            return sub
+
+    return s
+
+
+def search_webuntis_school(search_term: str) -> Optional[dict]:
+    """
+    Sucht über die offizielle WebUntis School Search API nach einer Schule.
+    Liefert Dict mit {loginName, serverUrl, server, displayName} oder None.
+    """
+    term = search_term.strip()
+    if not term:
+        return None
+    url = "https://mobile.webuntis.com/ms/schoolquery2"
+    payload = {
+        "id": "search_1",
+        "method": "searchSchool",
+        "params": [{"search": term}],
+        "jsonrpc": "2.0"
+    }
+    try:
+        r = requests.post(url, json=payload, timeout=6)
+        if r.status_code == 200:
+            data = r.json()
+            schools = data.get("result", {}).get("schools", [])
+            if schools:
+                return schools[0]
+    except Exception:
+        pass
+    return None
+
+
 def resolve_webuntis_server(untis_url: Optional[str] = None, school: Optional[str] = None) -> Tuple[str, str]:
     """
     Ermittelt den echten Server-Endpunkt und den Schulnamen aus einer WebUntis-URL oder dem Schulnamen.
-    Unterstützt Redirects und Schul-Subdomains (z.B. meine-schule.webuntis.com oder einfach 'meine-schule').
+    Unterstützt Redirects, Schul-Subdomains (z.B. meine-schule.webuntis.com) und schoolquery2 API.
     """
-    sch = (school or "").strip()
+    raw_sch = (school or "").strip()
     raw_url = (untis_url or "").strip()
 
     # Falls der Benutzer eine vollständige URL als 'school' übergeben hat
-    if sch and ("http://" in sch.lower() or "https://" in sch.lower()):
-        raw_url = sch
-        sch = ""
+    if raw_sch and ("http://" in raw_sch.lower() or "https://" in raw_sch.lower() or ".webuntis.com" in raw_sch.lower()):
+        raw_url = raw_sch
+        raw_sch = ""
 
-    if not raw_url and not sch:
-        raw_url = UNTIS_URL or "https://webuntis.com"
-
-    parsed = urlparse(raw_url) if raw_url else None
-    if parsed and parsed.query:
-        qs = parse_qs(parsed.query)
-        url_school = qs.get("school", [""])[0].strip()
-        if url_school and not sch:
-            sch = url_school
-
-    if parsed and not sch and parsed.netloc and ".webuntis.com" in parsed.netloc:
-        sub = parsed.netloc.split(".")[0].lower()
-        if sub not in ["arche", "urania", "triton", "www", "webuntis", "api"]:
-            sch = sub
+    sch = clean_school_identifier(raw_sch)
+    if not sch and raw_url:
+        sch = clean_school_identifier(raw_url)
 
     if not sch:
-        sch = _load_untis_school() or UNTIS_SCHOOL or ""
+        sch = _load_untis_school() or UNTIS_SCHOOL or "spengergasse"
+
+    # Falls Leerzeichen im Schulnamen (z.B. 'HTL Spengergasse'), nutze WebUntis API zur Suche
+    if " " in sch or len(sch) > 20:
+        found = search_webuntis_school(sch)
+        if found:
+            login_name = found.get("loginName") or sch
+            server_url = found.get("serverUrl") or ""
+            if server_url:
+                parsed = urlparse(server_url)
+                base = f"{parsed.scheme}://{parsed.netloc}/WebUntis"
+                return base, login_name
+
+    clean_host_sch = re.sub(r'[^a-zA-Z0-9_\-]', '', sch)
 
     candidates: List[str] = []
-    if sch:
-        candidates.append(f"https://{sch}.webuntis.com/WebUntis")
-    if parsed and parsed.netloc:
-        candidates.append(f"{parsed.scheme}://{parsed.netloc}/WebUntis")
-    candidates.append("https://arche.webuntis.com/WebUntis")
-    candidates.append("https://urania.webuntis.com/WebUntis")
+    if raw_url and "://" in raw_url:
+        p = urlparse(raw_url)
+        if p.netloc:
+            candidates.append(f"{p.scheme}://{p.netloc}/WebUntis")
+
+    if clean_host_sch:
+        candidates.append(f"https://{clean_host_sch}.webuntis.com/WebUntis")
+
+    candidates.extend([
+        "https://arche.webuntis.com/WebUntis",
+        "https://urania.webuntis.com/WebUntis",
+        "https://triton.webuntis.com/WebUntis",
+    ])
 
     # Prüfe Kandidaten kurz auf Erreichbarkeit
     for cand in candidates:
@@ -184,9 +258,7 @@ def resolve_webuntis_server(untis_url: Optional[str] = None, school: Optional[st
         except Exception:
             continue
 
-    default_base = f"https://{sch}.webuntis.com/WebUntis" if sch else (
-        f"{parsed.scheme}://{parsed.netloc}/WebUntis" if (parsed and parsed.netloc) else "https://webuntis.com/WebUntis"
-    )
+    default_base = f"https://{clean_host_sch}.webuntis.com/WebUntis" if clean_host_sch else "https://spengergasse.webuntis.com/WebUntis"
     return default_base, sch
 
 
@@ -228,14 +300,15 @@ def authenticate_untis_api(session: requests.Session, base_url: str, school: str
         return False, None, None, f"Connection error to WebUntis: {e}"
 
 
-def login_untis_direct(username: str, password: str, school: Optional[str] = None, untis_url: Optional[str] = None) -> bool:
+def login_untis_direct(username: str, password: str, school: Optional[str] = None, untis_url: Optional[str] = None) -> AuthResult:
     """
     Prüft Anmeldedaten direkt bei der WebUntis API und speichert sie bei Erfolg lokal.
+    Gibt AuthResult(success, message) zurück (abwärtskompatibel mit bool).
     """
-    u = username.strip()
+    u = clean_school_username(username)
     p = password.strip()
     if not u or not p:
-        return False
+        return AuthResult(False, "Benutzername und Passwort dürfen nicht leer sein.")
 
     base_url, resolved_school = resolve_webuntis_server(untis_url=untis_url, school=school)
     session = requests.Session()
@@ -248,8 +321,8 @@ def login_untis_direct(username: str, password: str, school: Optional[str] = Non
             sync_untis_data()
         except Exception:
             pass
-        return True
-    return False
+        return AuthResult(True, "OK")
+    return AuthResult(False, msg)
 
 
 def is_untis_session_valid() -> bool:

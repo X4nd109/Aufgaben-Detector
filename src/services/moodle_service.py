@@ -30,6 +30,7 @@ from auth import (
     save_moodle_cookies,
     get_existing_moodle_credentials,
     login_moodle_with_creds,
+    login_moodle_direct,
 )
 from models import Task, TaskAttachment
 
@@ -530,7 +531,7 @@ def fetch_moodle_tasks(deep_scan: bool = False) -> List[Task]:
     Versucht zuerst einen blitzschnellen HTTP-Scan (~2s).
     Fällt bei ungültigen Cookies oder Fehlern automatisch auf Playwright zurück.
     """
-    # 1. Blitzschneller HTTP-Scan
+    # 1. Blitzschneller HTTP-Scan mit vorhandenen Cookies
     try:
         tasks = fetch_moodle_tasks_http(deep_scan=deep_scan)
         if tasks is not None and len(tasks) > 0:
@@ -540,25 +541,41 @@ def fetch_moodle_tasks(deep_scan: bool = False) -> List[Task]:
 
     # 2. Browser-Fallback mit Playwright (Session wiederherstellen)
     tasks: List[Task] = []
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        try:
-            context = browser.new_context()
-            page = context.new_page()
-            session_ok = ensure_moodle_session(context, page)
-        finally:
-            try:
-                browser.close()
-            except Exception:
-                pass
+    session_ok = False
+    try:
+        with sync_playwright() as p:
+            browser = None
+            for ch in [None, "chrome", "msedge"]:
+                try:
+                    kwargs = {"headless": True}
+                    if ch:
+                        kwargs["channel"] = ch
+                    browser = p.chromium.launch(**kwargs)
+                    if browser:
+                        break
+                except Exception:
+                    continue
 
-        if session_ok:
-            try:
-                tasks = fetch_moodle_tasks_http(deep_scan=deep_scan)
-                if tasks is not None:
-                    return tasks
-            except Exception as e2:
-                print(f"Fehler bei Moodle-HTTP nach Refresh: {e2}", file=sys.stderr)
+            if browser:
+                try:
+                    context = browser.new_context()
+                    page = context.new_page()
+                    session_ok = ensure_moodle_session(context, page)
+                finally:
+                    try:
+                        browser.close()
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    if session_ok:
+        try:
+            tasks = fetch_moodle_tasks_http(deep_scan=deep_scan)
+            if tasks is not None:
+                return tasks
+        except Exception as e2:
+            print(f"Fehler bei Moodle-HTTP nach Refresh: {e2}", file=sys.stderr)
 
     return tasks
 

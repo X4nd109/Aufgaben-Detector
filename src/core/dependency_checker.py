@@ -84,12 +84,39 @@ def format_warning_banner(missing: List[Tuple[str, str, str]], install_cmd: str)
     return "\n".join(lines)
 
 
+def check_playwright_chromium_installed() -> bool:
+    """Checks whether Playwright's Chromium browser binary is installed."""
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            exec_path = p.chromium.executable_path
+            return bool(exec_path and os.path.exists(exec_path))
+    except Exception:
+        return False
+
+
+def install_playwright_chromium() -> int:
+    """Installs Playwright's Chromium browser binary."""
+    cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
+    print(f"\n[INFO] Installing Playwright Chromium browser binary (for Microsoft Teams)...\n" + "-" * 78)
+    try:
+        res = subprocess.run(cmd)
+        return res.returncode
+    except Exception as e:
+        print(f"\n[ERROR] Failed to install Playwright browser: {e}")
+        return 1
+
+
 def run_pip_install(requirements_path: str) -> int:
     """Runs 'python -m pip install -r requirements.txt' with the current Python executable."""
     cmd = [sys.executable, "-m", "pip", "install", "-r", requirements_path]
     print(f"\n[INFO] Executing: {' '.join(cmd)}\n" + "-" * 78)
     try:
         result = subprocess.run(cmd)
+        if result.returncode == 0:
+            # Install Playwright browser if not yet present
+            if not check_playwright_chromium_installed():
+                install_playwright_chromium()
         return result.returncode
     except Exception as e:
         print(f"\n[ERROR] Failed to execute pip command: {e}")

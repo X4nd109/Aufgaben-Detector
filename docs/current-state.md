@@ -1,11 +1,28 @@
 # Current Project State & Session Handoff — Aufgaben-Detector
 
 > **Last Updated**: 2026-10-21  
-> **Active Milestone**: Milestone 3 — In-App Auto-Update, Sync Performance & UI Polish (v1.0.10)
+> **Active Milestone**: Milestone 3 — In-App Auto-Update, Sync Performance & UI Polish (v1.0.11)
 
 ---
 
 ## 1. Completed Tasks & Milestones
+
+- [x] **Moodle & WebUntis Login Robustness & Cross-Device Compatibility**:
+  - **Browserloses HTTP-Moodle-Login (`login_moodle_http`)**:
+    - Moodle-Authentifizierung läuft primär über direkte HTTP-Requests (`requests.Session` mit dynamischer `logintoken`-Extraktion und Form-POST).
+    - Funktioniert in unter 0,3s ohne vorinstallierten Playwright-Chromium-Browser (löst Login-Fehlschläge auf Geräten, auf denen nur `pip install -r requirements.txt` ausgeführt wurde).
+    - Automatischer Browser-Fallback (`chrome`, `msedge`, `chromium`) nur noch als sekundäre Stufe für Notfälle.
+  - **WebUntis Schulsuche & Bereinigung (`search_webuntis_school`, `clean_school_identifier`)**:
+    - Automatische Erkennung und Bereinigung von Domains (`spengergasse.webuntis.com`), vollständigen URLs und Leerzeichen.
+    - Integration der offiziellen WebUntis School Search API (`https://mobile.webuntis.com/ms/schoolquery2`).
+    - Wenn das Schulfeld im Dialog leer gelassen wird, wird automatisch die Standard-Schule (`spengergasse`) verwendet.
+  - **Automatisches Bereinigen von Schul-E-Mail-Adressen (`clean_school_username`)**:
+    - Falls Schüler ihre E-Mail-Adresse (`end240102@spengergasse.at`) statt der Schülerkennung eingeben, wird das Suffix `@...` automatisch entfernt.
+  - **Präzise Fehlerrückmeldung im TUI**:
+    - `AuthResult` Tuple-Klasse transportiert den echten Server-Fehlertext von Moodle und WebUntis direkt in die Statuszeilen von `MoodleLoginModal` und `UntisSetupModal`.
+  - **Playwright Chromium Pre-Flight Prüfung im `dependency_checker`**:
+    - Erkennt fehlende Browser-Binärdateien und stellt diese bei Bedarf bereit.
+  - 7 neue automatisierte Unit-Tests in `tests/test_auth_logins.py` (Gesamtsuite: 274 Tests, 100 % Erfolgsquote).
 
 - [x] **Sync Performance & TUI Lag Optimization (v1.0.10)**:
   - **SyncSpinner Interval Throttling**: TUI-Ladeanimation (`SyncSpinner`) von aggressiven 80 ms (12,5 FPS) auf 250 ms (4 FPS) gedrosselt. Verhindert die Überlastung des Textual Asyncio-Event-Loops und von Windows ConPTY ANSI-Rerenders bei gleichzeitiger Hintergrundarbeit.

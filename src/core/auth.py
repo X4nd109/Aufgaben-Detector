@@ -10,6 +10,8 @@ import shutil
 import sys
 import time
 import urllib.parse
+import re
+import requests
 from typing import Optional, Tuple
 from playwright.sync_api import sync_playwright
 
@@ -39,6 +41,36 @@ TEAMS_OAUTH_AUTHORIZE_URL = (
     "&response_mode=fragment"
     "&response_type=code"
 )
+
+
+class AuthResult(tuple):
+    """
+    Rückgabewert für Login-Operationen (success: bool, message: str).
+    Abwärtskompatibel mit bool-Prüfungen (if res:) und Tuple-Unpacking (ok, msg = res).
+    """
+    def __new__(cls, success: bool, message: str = ""):
+        return super().__new__(cls, (bool(success), str(message)))
+
+    @property
+    def success(self) -> bool:
+        return self[0]
+
+    @property
+    def message(self) -> str:
+        return self[1]
+
+    def __bool__(self) -> bool:
+        return self[0]
+
+
+def clean_school_username(username: str) -> str:
+    """Bereinigt Schulkennungen: entfernt versehentlich eingegebene @spengergasse.at E-Mail-Suffixe."""
+    if not username:
+        return ""
+    u = username.strip()
+    if "@" in u:
+        u = u.split("@")[0].strip()
+    return u
 
 
 def get_saved_moodle_cookies() -> Optional[list]:
@@ -123,11 +155,13 @@ def check_moodle_session(page, context) -> bool:
 def login_moodle_with_creds(page, context, username: str, password: str, moodle_url: Optional[str] = None) -> bool:
     """Führt Moodle-Login durch und speichert Cookies."""
     base_url = (moodle_url or MOODLE_BASE_URL).rstrip("/")
+    u = clean_school_username(username)
+    p = password.strip()
     try:
         page.goto(f"{base_url}/login/index.php", wait_until="domcontentloaded", timeout=15000)
         page.wait_for_selector("#username", timeout=10000)
-        page.fill("#username", username)
-        page.fill("#password", password)
+        page.fill("#username", u)
+        page.fill("#password", p)
         page.click("#loginbtn")
         page.wait_for_load_state("domcontentloaded", timeout=15000)
         page.wait_for_timeout(2500)
@@ -148,31 +182,139 @@ def login_moodle_with_creds(page, context, username: str, password: str, moodle_
         return False
 
 
-def login_moodle_direct(username: str, password: str, moodle_url: Optional[str] = None) -> bool:
-    """Führt Moodle-Login mit Benutzername und Passwort direkt im Hintergrund durch."""
+def login_moodle_http(username: str, password: str, moodle_url: Optional[str] = None) -> AuthResult:
+    """
+    Führt Moodle-Login blitzschnell rein über HTTP-Requests durch (~0.3s).
+    Funktioniert auf jedem System ohne vorinstalliertes Playwright-Chromium.
+    Liest den dynamischen 'logintoken' aus der Moodle-Login-Seite und sendet den POST.
+    """
+    base_url = (moodle_url or MOODLE_BASE_URL).rstrip("/")
+    u = clean_school_username(username)
+    p = password.strip()
+    if not u or not p:
+        return AuthResult(False, "Benutzername und Passwort dürfen nicht leer sein.")
+
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    })
+
+    try:
+        login_url = f"{base_url}/login/index.php"
+        r_get = session.get(login_url, timeout=12)
+        if r_get.status_code != 200:
+            return AuthResult(False, f"Moodle-Server antwortet mit HTTP {r_get.status_code}.")
+
+        token_match = re.search(r'name=["\']logintoken["\']\s+value=["\']([^"\']+)["\']', r_get.text)
+        logintoken = token_match.group(1) if token_match else ""
+
+        payload = {
+            "anchor": "",
+            "logintoken": logintoken,
+            "username": u,
+            "password": p,
+        }
+
+        r_post = session.post(login_url, data=payload, timeout=15, allow_redirects=True)
+
+        # Prüfe auf Fehlermeldung auf der Seite
+        if "/login/index.php" in r_post.url or "loginerrormessage" in r_post.text or "loginerrors" in r_post.text:
+            err_m = re.search(r'class=["\'][^"\']*(?:loginerrors|alert-danger)[^"\']*["\'][^>]*>(.*?)</div>', r_post.text, re.DOTALL | re.IGNORECASE)
+            if not err_m:
+                err_m = re.search(r'id=["\']loginerrormessage["\'][^>]*>(.*?)</div>', r_post.text, re.DOTALL | re.IGNORECASE)
+            err_text = re.sub(r'<[^>]+>', '', err_m.group(1)).strip() if err_m else "Ungültige Anmeldedaten."
+            return AuthResult(False, err_text)
+
+        # Prüfe ob Cookies vorhanden sind
+        cookie_list = []
+        moodle_netloc = urllib.parse.urlparse(base_url).netloc
+        for c in session.cookies:
+            cookie_list.append({
+                "name": c.name,
+                "value": c.value,
+                "domain": c.domain or moodle_netloc,
+                "path": c.path or "/",
+                "secure": c.secure,
+                "httpOnly": True,
+            })
+
+        has_session = any(c.get("name") == "MoodleSession" for c in cookie_list)
+        if not has_session and "/login/index.php" in r_post.url:
+            return AuthResult(False, "Moodle-Login fehlgeschlagen. Bitte Zugangsdaten prüfen.")
+
+        save_moodle_cookies(cookie_list)
+        return AuthResult(True, "OK")
+    except requests.exceptions.RequestException as e:
+        return AuthResult(False, f"Verbindung zu Moodle fehlgeschlagen: {e}")
+    except Exception as e:
+        return AuthResult(False, f"Fehler bei Moodle-Authentifizierung: {e}")
+
+
+def login_moodle_direct(username: str, password: str, moodle_url: Optional[str] = None) -> AuthResult:
+    """
+    Führt Moodle-Login mit Benutzername und Passwort durch und speichert Credentials lokal.
+    Versucht primär blitzschnelles HTTP (funktioniert ohne Playwright-Chromium).
+    Fällt bei Bedarf auf Playwright zurück (versucht Edge/Chrome/Chromium).
+    """
     if moodle_url:
         from config import save_moodle_base_url
         save_moodle_base_url(moodle_url)
+
+    u = clean_school_username(username)
+    p = password.strip()
+    if not u or not p:
+        return AuthResult(False, "Benutzername und Passwort dürfen nicht leer sein.")
+
+    # 1. Primärer HTTP-Login (blitzschnell, kein Playwright nötig)
+    http_res = login_moodle_http(u, p, moodle_url=moodle_url)
+    if http_res.success:
+        target_creds_file = MOODLE_CREDS_POSSIBLE_PATHS[0]
+        os.makedirs(os.path.dirname(target_creds_file), exist_ok=True)
+        try:
+            with open(target_creds_file, "w", encoding="utf-8") as f:
+                json.dump({"username": u, "password": p}, f)
+        except Exception:
+            pass
+        return http_res
+
+    # Falls der Fehler spezifisch "Ungültige Anmeldedaten" war, hat Moodle den Login abgewiesen
+    if any(kw in http_res.message.lower() for kw in ["ungültig", "invalid", "kennwort", "password"]):
+        return http_res
+
+    # 2. Browser-Fallback (falls Moodle JavaScript oder spezielles SSO verlangt)
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
-            page = context.new_page()
-
-            success = login_moodle_with_creds(page, context, username, password, moodle_url=moodle_url)
-            browser.close()
-
-            if success:
-                target_creds_file = MOODLE_CREDS_POSSIBLE_PATHS[0]
-                os.makedirs(os.path.dirname(target_creds_file), exist_ok=True)
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            browser = None
+            for ch in [None, "chrome", "msedge"]:
                 try:
-                    with open(target_creds_file, "w", encoding="utf-8") as f:
-                        json.dump({"username": username, "password": password}, f)
+                    kwargs = {"headless": True}
+                    if ch:
+                        kwargs["channel"] = ch
+                    browser = pw.chromium.launch(**kwargs)
+                    if browser:
+                        break
                 except Exception:
-                    pass
-            return success
+                    continue
+
+            if browser:
+                context = browser.new_context()
+                page = context.new_page()
+                success = login_moodle_with_creds(page, context, u, p, moodle_url=moodle_url)
+                browser.close()
+                if success:
+                    target_creds_file = MOODLE_CREDS_POSSIBLE_PATHS[0]
+                    os.makedirs(os.path.dirname(target_creds_file), exist_ok=True)
+                    try:
+                        with open(target_creds_file, "w", encoding="utf-8") as f:
+                            json.dump({"username": u, "password": p}, f)
+                    except Exception:
+                        pass
+                    return AuthResult(True, "OK")
     except Exception:
-        return False
+        pass
+
+    return http_res
 
 
 def setup_moodle_interactive(console=None) -> bool:
@@ -193,10 +335,13 @@ def setup_moodle_interactive(console=None) -> bool:
             from config import save_moodle_base_url
             save_moodle_base_url(moodle_url)
 
-        username = input("Moodle username: ").strip()
+        raw_username = input("Moodle username (or email): ").strip()
+        username = clean_school_username(raw_username)
         if not username:
             print("Cancelled: No username entered.")
             return False
+        if "@" in raw_username:
+            print(f"Notice: Cleaned username to '{username}' (school email domain removed).")
 
         password = getpass.getpass("Moodle password: ").strip()
         if not password:
@@ -204,35 +349,20 @@ def setup_moodle_interactive(console=None) -> bool:
             return False
 
         print("Checking Moodle login...")
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
-            page = context.new_page()
-
-            success = login_moodle_with_creds(page, context, username, password, moodle_url=moodle_url)
-            browser.close()
-
-            if success:
-                # Save credentials locally for automatic renewal
-                target_creds_file = MOODLE_CREDS_POSSIBLE_PATHS[0]
-                os.makedirs(os.path.dirname(target_creds_file), exist_ok=True)
-                try:
-                    with open(target_creds_file, "w", encoding="utf-8") as f:
-                        json.dump({"username": username, "password": password}, f)
-                except Exception:
-                    pass
-
-                if console:
-                    console.print("[bold green]✓ Moodle login successful and saved permanently![/bold green]")
-                else:
-                    print("✓ Moodle login successful and saved permanently!")
-                return True
+        res = login_moodle_direct(username, password, moodle_url=moodle_url)
+        if res.success:
+            if console:
+                console.print("[bold green]✓ Moodle login successful and saved permanently![/bold green]")
             else:
-                if console:
-                    console.print("[bold red]✗ Moodle login failed. Please check your username and password.[/bold red]")
-                else:
-                    print("✗ Moodle login failed. Please check your username and password.")
-                return False
+                print("✓ Moodle login successful and saved permanently!")
+            return True
+        else:
+            err = res.message or "Moodle login failed. Please check your username and password."
+            if console:
+                console.print(f"[bold red]✗ {err}[/bold red]")
+            else:
+                print(f"✗ {err}")
+            return False
     except KeyboardInterrupt:
         print("\nCancelled.")
         return False
