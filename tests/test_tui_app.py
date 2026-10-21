@@ -47,6 +47,8 @@ from models import Task
 
 class TestAufgabenDetectorTUI(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        from config import save_enabled_platforms, DEFAULT_ENABLED_PLATFORMS
+        save_enabled_platforms(dict(DEFAULT_ENABLED_PLATFORMS))
         # Erstelle TaskManager ohne automatischen Hintergrund-Prefetch für Tests
         self.mgr = TaskManager(autostart_prefetch=False)
         self.mgr.tasks = [
@@ -79,6 +81,10 @@ class TestAufgabenDetectorTUI(unittest.IsolatedAsyncioTestCase):
                 description="Test Teams Aufgabe Beschreibung"
             )
         ]
+
+    async def asyncTearDown(self):
+        from config import save_enabled_platforms, DEFAULT_ENABLED_PLATFORMS
+        save_enabled_platforms(dict(DEFAULT_ENABLED_PLATFORMS))
 
     async def test_tui_buttons_and_interactions(self):
         app = AufgabenDetectorApp(self.mgr)
@@ -2370,7 +2376,7 @@ class TestAufgabenDetectorTUI(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(app.screen.query("#btn_action_git")), 0)
 
                 # Click untis action button ("Disable") to deactivate it
-                await pilot.click("#btn_action_untis")
+                btn_act_untis.press()
                 await pilot.pause()
 
                 self.assertEqual(str(btn_act_untis.label), "Enable")
@@ -2382,7 +2388,7 @@ class TestAufgabenDetectorTUI(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(btn_untis.disabled)
 
                 # Click untis action button ("Enable") to reactivate it
-                await pilot.click("#btn_action_untis")
+                btn_act_untis.press()
                 await pilot.pause()
                 self.assertEqual(str(btn_act_untis.label), "Disable")
                 self.assertEqual(btn_act_untis.variant, "default")
