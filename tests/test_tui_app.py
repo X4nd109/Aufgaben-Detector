@@ -28,8 +28,10 @@ from tui_app import (
     TrashModal,
     TaskDetailModal,
     LoginChoiceModal,
+    LoginReminderModal,
     TeamsSetupModal,
     MoodleLoginModal,
+    UntisSetupModal,
     AbsencesScreen,
     ExcuseLetterModal,
     ExamsScreen,
@@ -187,6 +189,7 @@ class TestAufgabenDetectorTUI(unittest.IsolatedAsyncioTestCase):
             await pilot.click("#btn_login_teams")
             await pilot.pause()
             self.assertIsInstance(app.screen, TeamsSetupModal)
+            self.assertEqual(app.screen.query_one("#inp_t_email", Input).value, "")
             # Back im Teams-Dialog führt zurück ins LoginChoiceModal
             await pilot.click("#btn_t_cancel")
             await pilot.pause()
@@ -196,6 +199,7 @@ class TestAufgabenDetectorTUI(unittest.IsolatedAsyncioTestCase):
             await pilot.click("#btn_login_moodle")
             await pilot.pause()
             self.assertIsInstance(app.screen, MoodleLoginModal)
+            self.assertEqual(app.screen.query_one("#inp_m_user", Input).placeholder, "Username")
             # Back im Moodle-Dialog führt zurück ins LoginChoiceModal
             await pilot.click("#btn_m_cancel")
             await pilot.pause()
@@ -245,6 +249,7 @@ class TestAufgabenDetectorTUI(unittest.IsolatedAsyncioTestCase):
             await pilot.press("t")
             await pilot.pause()
             self.assertIsInstance(app.screen, TeamsSetupModal)
+            self.assertEqual(app.screen.query_one("#inp_t_email", Input).value, "")
             await pilot.press("escape")
             await pilot.pause()
 
@@ -255,6 +260,7 @@ class TestAufgabenDetectorTUI(unittest.IsolatedAsyncioTestCase):
             await pilot.press("m")
             await pilot.pause()
             self.assertIsInstance(app.screen, MoodleLoginModal)
+            self.assertEqual(app.screen.query_one("#inp_m_user", Input).placeholder, "Username")
             await pilot.press("escape")
             await pilot.pause()
 
@@ -2292,6 +2298,132 @@ class TestAufgabenDetectorTUI(unittest.IsolatedAsyncioTestCase):
             info_bar = app.query_one("#info_bar")
             table = app.query_one("#tasks_table")
             self.assertEqual(table.region.y - (info_bar.region.y + info_bar.region.height), 1, "Es muss genau 1 leere Zeile zwischen info_bar und der Tabelle liegen")
+
+    async def test_login_reminder_modal_rendering_and_badges(self):
+        """Verifies LoginReminderModal renders English texts and appropriate badges."""
+        with patch("auth.get_platform_login_status", return_value={"moodle": True, "teams": False, "untis": False}):
+            app = AufgabenDetectorApp(self.mgr)
+            async with app.run_test(size=(120, 35)) as pilot:
+                modal = LoginReminderModal()
+                await app.push_screen(modal)
+                await pilot.pause()
+
+                self.assertIsInstance(app.screen, LoginReminderModal)
+                title = app.screen.query_one("#login_reminder_title", Label)
+                self.assertIn("Action Required", str(title.render()))
+
+                # Buttons exist
+                btn_open = app.screen.query_one("#btn_open_login_menu", Button)
+                btn_dismiss = app.screen.query_one("#btn_dismiss_login", Button)
+                self.assertIn("Open Login Menu", str(btn_open.label))
+                self.assertIn("Dismiss", str(btn_dismiss.label))
+
+                # Test badges in box
+                status_labels = [str(lbl.render()) for lbl in app.screen.query(".login_platform_status")]
+                self.assertTrue(any("✓ Signed in" in s for s in status_labels))
+                self.assertTrue(any("✗ Not signed in" in s for s in status_labels))
+
+                # Test dismiss via button
+                await pilot.click("#btn_dismiss_login")
+                await pilot.pause()
+                self.assertNotIsInstance(app.screen, LoginReminderModal)
+
+    async def test_login_reminder_modal_open_action(self):
+        """Verifies clicking Open Login Menu opens LoginChoiceModal."""
+        with patch("auth.get_platform_login_status", return_value={"moodle": False, "teams": False, "untis": False}):
+            app = AufgabenDetectorApp(self.mgr)
+            async with app.run_test(size=(120, 35)) as pilot:
+                # Trigger _check_login_status_after_sync
+                app._check_login_status_after_sync()
+                await pilot.pause()
+                self.assertIsInstance(app.screen, LoginReminderModal)
+
+                # Click Open Login Menu button
+                await pilot.click("#btn_open_login_menu")
+                await pilot.pause()
+                self.assertIsInstance(app.screen, LoginChoiceModal)
+
+    async def test_login_choice_modal_components_and_toggle(self):
+        """Verifies LoginChoiceModal renders action buttons, login buttons, labels, and clicking toggle updates status."""
+        app = AufgabenDetectorApp(self.mgr)
+        async with app.run_test(size=(120, 35)) as pilot:
+            with patch("auth.is_untis_logged_in", return_value=False), \
+                 patch("auth.is_teams_logged_in", return_value=True), \
+                 patch("auth.is_moodle_logged_in", return_value=False):
+                await app.push_screen(LoginChoiceModal())
+                await pilot.pause()
+                self.assertIsInstance(app.screen, LoginChoiceModal)
+
+                # Teams is logged in -> action button is "Log Out"
+                btn_act_teams = app.screen.query_one("#btn_action_teams", Button)
+                self.assertIn("Log Out", str(btn_act_teams.label))
+
+                # Moodle is not logged in -> action button is "Disable"
+                btn_act_moodle = app.screen.query_one("#btn_action_moodle", Button)
+                self.assertEqual(str(btn_act_moodle.label), "Disable")
+
+                # Untis is not logged in -> action button is "Disable"
+                btn_act_untis = app.screen.query_one("#btn_action_untis", Button)
+                self.assertEqual(str(btn_act_untis.label), "Disable")
+
+                # Git has no action button!
+                self.assertEqual(len(app.screen.query("#btn_action_git")), 0)
+
+                # Click untis action button ("Disable") to deactivate it
+                await pilot.click("#btn_action_untis")
+                await pilot.pause()
+
+                self.assertEqual(str(btn_act_untis.label), "Enable")
+                self.assertEqual(btn_act_untis.variant, "success")
+
+                lbl_untis = app.screen.query_one("#lbl_status_untis", Label)
+                self.assertIn("Disabled", str(lbl_untis.render()))
+                btn_untis = app.screen.query_one("#btn_login_untis", Button)
+                self.assertTrue(btn_untis.disabled)
+
+                # Click untis action button ("Enable") to reactivate it
+                await pilot.click("#btn_action_untis")
+                await pilot.pause()
+                self.assertEqual(str(btn_act_untis.label), "Disable")
+                self.assertEqual(btn_act_untis.variant, "default")
+                self.assertFalse(btn_untis.disabled)
+
+    async def test_login_choice_modal_logout_buttons(self):
+        """Verifies clicking Log Out on a platform triggers the logout routine."""
+        app = AufgabenDetectorApp(self.mgr)
+        async with app.run_test(size=(120, 35)) as pilot:
+            with patch("auth.logout_moodle", return_value=(True, "Moodle logged out and cache cleared.")) as mock_logout_moodle, \
+                 patch("auth.is_moodle_logged_in", return_value=True):
+                await app.push_screen(LoginChoiceModal())
+                await pilot.pause()
+
+                btn_action_moodle = app.screen.query_one("#btn_action_moodle", Button)
+                self.assertIn("Log Out", str(btn_action_moodle.label))
+                await pilot.click("#btn_action_moodle")
+                await pilot.pause()
+                mock_logout_moodle.assert_called_once()
+
+    async def test_check_login_status_skips_when_dialog_open_or_all_logged_in(self):
+        """Verifies _check_login_status_after_sync does not interrupt existing screens or when all logged in."""
+        # Case 1: All logged in -> nothing pushed
+        with patch("auth.has_missing_logins", return_value=False):
+            app = AufgabenDetectorApp(self.mgr)
+            async with app.run_test(size=(120, 35)) as pilot:
+                app._check_login_status_after_sync()
+                await pilot.pause()
+                self.assertNotIsInstance(app.screen, LoginReminderModal)
+
+        # Case 2: Missing logins but SettingsModal is open -> nothing pushed
+        with patch("auth.has_missing_logins", return_value=True):
+            app2 = AufgabenDetectorApp(self.mgr)
+            async with app2.run_test(size=(120, 35)) as pilot2:
+                await app2.push_screen(SettingsModal())
+                await pilot2.pause()
+                self.assertIsInstance(app2.screen, SettingsModal)
+                app2._check_login_status_after_sync()
+                await pilot2.pause()
+                # Must still be SettingsModal, not pushed over
+                self.assertIsInstance(app2.screen, SettingsModal)
 
 
 if __name__ == "__main__":

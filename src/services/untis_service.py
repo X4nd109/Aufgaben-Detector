@@ -73,6 +73,13 @@ def time_to_minutes(t_str: str) -> int:
         return 0
 
 
+def minutes_to_time(m: int) -> str:
+    """Konvertiert Minuten seit Mitternacht in 'HH:MM'."""
+    h = (m // 60) % 24
+    mins = m % 60
+    return f"{h:02d}:{mins:02d}"
+
+
 def intervals_overlap(start1: str, end1: str, start2: str, end2: str) -> bool:
     """Prüft, ob zwei Zeitintervalle [start1, end1] und [start2, end2] überlappen."""
     m_s1 = time_to_minutes(start1)
@@ -876,12 +883,29 @@ def match_absences_with_timetable(
                     continue
                 seen_lesson_keys.add(unit_key)
 
+                m_s1 = time_to_minutes(l.start_time)
+                m_e1 = time_to_minutes(l.end_time)
+                m_s2 = time_to_minutes(abs_int.start_time)
+                m_e2 = time_to_minutes(abs_int.end_time)
+
+                overlap_start = max(m_s1, m_s2)
+                overlap_end = min(m_e1, m_e2)
+                overlap_mins = max(0, overlap_end - overlap_start)
+                if overlap_mins == 0:
+                    continue
+
+                abs_start_str = minutes_to_time(overlap_start)
+                abs_end_str = minutes_to_time(overlap_end)
+
                 missed = MissedLesson(
                     date=l.date,
                     subject=subj_clean,
                     period_num=l.period_num,
-                    start_time=l.start_time,
-                    end_time=l.end_time,
+                    start_time=abs_start_str,
+                    end_time=abs_end_str,
+                    lesson_start_time=l.start_time,
+                    lesson_end_time=l.end_time,
+                    duration_minutes=overlap_mins,
                     teacher=l.teacher,
                     room=l.room,
                     is_cancelled=l.is_cancelled,
@@ -1179,7 +1203,7 @@ def get_daily_absence_summaries(summaries: Optional[List[SubjectAbsenceSummary]]
     for s in summaries:
         for m in s.missed_lessons:
             # Eindeutiger Schlüssel für Unterrichtsstunde an dem Tag
-            key = f"{m.date}_{m.start_time}_{m.subject}"
+            key = f"{m.date}_{m.lesson_start_time or m.start_time}_{m.subject}"
             if key in seen_keys:
                 continue
             seen_keys.add(key)
@@ -1190,7 +1214,15 @@ def get_daily_absence_summaries(summaries: Optional[List[SubjectAbsenceSummary]]
         m_list = lessons_by_date[d_str]
         m_list.sort(key=lambda x: x.start_time)
         hours = len(m_list)
-        total_mins = hours * 50
+        total_mins = 0
+        for m in m_list:
+            if getattr(m, "duration_minutes", 0) > 0:
+                total_mins += m.duration_minutes
+            elif m.start_time and m.end_time:
+                diff = time_to_minutes(m.end_time) - time_to_minutes(m.start_time)
+                total_mins += diff if diff > 0 else 50
+            else:
+                total_mins += 50
         dur_h = total_mins // 60
         dur_m = total_mins % 60
         dur_str = f"{dur_h}:{dur_m:02d}"

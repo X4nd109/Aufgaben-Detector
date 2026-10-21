@@ -155,6 +155,44 @@ class TestUntisService(unittest.TestCase):
         self.assertEqual(subj_map.get("E"), 1)
         self.assertEqual(subj_map.get("SWP"), 1)
 
+    def test_lateness_partial_period_matching(self):
+        """
+        Tests that an absence with a short duration (e.g. 11 mins late) calculates
+        the exact overlap window, retains the original period times, and sets duration_minutes.
+        """
+        absences = [
+            UntisAbsenceInterval(
+                id="abs_late",
+                date="2026-10-20",
+                start_time="14:25",
+                end_time="14:36",
+                reason="Verspätung",
+                status="Offen",
+            )
+        ]
+        lessons = [
+            UntisLesson(
+                id="l_infi",
+                date="2026-10-20",
+                start_time="14:25",
+                end_time="15:15",
+                period_num=7,
+                subject="INFI",
+            )
+        ]
+        summaries = match_absences_with_timetable(absences, lessons, student_group="X")
+        self.assertEqual(len(summaries), 1)
+        self.assertEqual(summaries[0].subject, "INFI")
+        self.assertEqual(summaries[0].total_hours, 1)
+
+        missed = summaries[0].missed_lessons[0]
+        self.assertEqual(missed.start_time, "14:25")
+        self.assertEqual(missed.end_time, "14:36")
+        self.assertEqual(missed.lesson_start_time, "14:25")
+        self.assertEqual(missed.lesson_end_time, "15:15")
+        self.assertEqual(missed.duration_minutes, 11)
+        self.assertEqual(missed.reason, "Verspätung")
+
     def test_resolve_webuntis_server(self):
         from untis_service import resolve_webuntis_server
         # 1. School as simple name

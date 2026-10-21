@@ -27,7 +27,7 @@
 | `ExcuseLetterModal` (`[U]`) | Modal | Fehlstunden-Übersicht mit Stundenplan-Abgleich und 1-Klick-PDF-Export für die Schule. |
 | `ExamDetailModal` | Modal | Zeigt Prüfungsdetails und ermöglicht das Bearbeiten persönlicher Stoff-Notizen (`exam_notes.json`). |
 | `AddExamModal` | Modal | Formular zum Eintragen manueller Prüfungstermine mit nativer Wochentagserkennung. |
-| `SettingsModal` (`[O]`) | Modal | Scrollbarer Konfigurationsdialog mit Versionsanzeige in der oberen rechten Ecke (`v1.0.11`), Themes, Logins und Schülereinstellungen. |
+| `SettingsModal` (`[O]`) | Modal | Scrollbarer Konfigurationsdialog mit Versionsanzeige in der oberen rechten Ecke (`v1.1.0`), Themes, Logins und Schülereinstellungen. |
 | `UpdateReminderModal` | Modal | Popup-Erinnerung bei neueren GitHub-Releases mit 1-Klick-In-App-Download, Fortschrittsbalken und automatischer Installation im selben Verzeichnis (ohne PATH-Änderung oder Datenverlust). |
 | `LoginChoiceModal` (`[L]`) | Modal | Zentrales Auswahlmenü für Anmeldungen bei Moodle, Microsoft Teams und WebUntis. |
 | `TeamsSetupModal` | Modal | Geführter Teams-Login via Playwright-Chromium mit Passkey-, 2FA- oder Kennwort-Unterstützung. |
@@ -52,6 +52,7 @@
 | `Hide / Delete` | `[L]` / `btn_delete_task` | Verschiebt eine Aufgabe in den lokalen Papierkorb (`deleted_tasks.json`). |
 | `Restore` | `[W]` / `btn_restore_task` | Stellt eine gelöschte Aufgabe aus dem Papierkorb wieder her. |
 | `Generate Excuse PDF` | `btn_generate_excuse` | Erzeugt das druckfertige Entschuldigungsschreiben als PDF und öffnet den System-Betrachter. |
+| `Hide Lateness` | `[L]` / `btn_el_filter_lateness` | Blendet im Entschuldigungsschreiben Verspätungen (< 50 min) ein oder aus (standardmäßig aktiv: ON). |
 | `Synchronize` | `[R]` / `btn_sync` | Startet den sofortigen Hintergrund-Abgleich mit Moodle, Teams und WebUntis. |
 | `Change Theme` | `[T]` / `Ctrl+P` | Rotiert durch die 22 Themes oder öffnet die Theme-Palette (`search_themes`) mit Rechtsklick-Favoriten (`⭐`). |
 | `ThemeSelectModal` | Modal | Menü zur Auswahl aus allen 22 Themes (inkl. `OLED`); Rechtsklick markiert ein Theme als Favorit (`⭐`), Favoriten stehen ganz oben. |

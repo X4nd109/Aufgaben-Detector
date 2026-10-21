@@ -2,7 +2,7 @@
 models.py - Datenmodelle für Aufgaben aus Moodle und Teams.
 """
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from typing import List, Dict, Optional
 import datetime
 import re
@@ -126,7 +126,9 @@ class UntisLesson:
 
     @classmethod
     def from_dict(cls, d: dict) -> "UntisLesson":
-        return cls(**d)
+        valid_keys = {f.name for f in fields(cls)}
+        clean_d = {k: v for k, v in d.items() if k in valid_keys}
+        return cls(**clean_d)
 
 
 @dataclass
@@ -144,7 +146,9 @@ class UntisAbsenceInterval:
 
     @classmethod
     def from_dict(cls, d: dict) -> "UntisAbsenceInterval":
-        return cls(**d)
+        valid_keys = {f.name for f in fields(cls)}
+        clean_d = {k: v for k, v in d.items() if k in valid_keys}
+        return cls(**clean_d)
 
 
 @dataclass
@@ -159,13 +163,18 @@ class MissedLesson:
     is_cancelled: bool = False
     reason: str = ""
     absence_status: str = ""
+    lesson_start_time: str = ""
+    lesson_end_time: str = ""
+    duration_minutes: int = 50
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, d: dict) -> "MissedLesson":
-        return cls(**d)
+        valid_keys = {f.name for f in fields(cls)}
+        clean_d = {k: v for k, v in d.items() if k in valid_keys}
+        return cls(**clean_d)
 
 
 @dataclass

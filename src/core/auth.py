@@ -12,7 +12,7 @@ import time
 import urllib.parse
 import re
 import requests
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 from playwright.sync_api import sync_playwright
 
 try:
@@ -26,11 +26,14 @@ from config import (
     MOODLE_COOKIE_FILE,
     MOODLE_CREDS_POSSIBLE_PATHS,
     UNTIS_CREDS_POSSIBLE_PATHS,
+    UNTIS_CACHE_FILE,
+    UNTIS_PROFILE_DIR,
     TEAMS_BASE_URL,
     TEAMS_PROFILE_DIR,
     TEAMS_STATUS_FILE,
     CHROMIUM_CACHE_ARGS,
     launch_teams_browser_context,
+    is_platform_enabled,
 )
 
 TEAMS_OAUTH_AUTHORIZE_URL = (
@@ -100,6 +103,8 @@ def get_existing_moodle_credentials() -> Tuple[Optional[str], Optional[dict]]:
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
+                    if data.get("logged_out"):
+                        return None, None
                     u = data.get("username", "").strip()
                     p = data.get("password", "").strip()
                     if u and p:
@@ -116,6 +121,8 @@ def get_existing_untis_credentials() -> Tuple[Optional[str], Optional[dict]]:
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
+                    if data.get("logged_out"):
+                        return None, None
                     u = data.get("username", "").strip()
                     p = data.get("password", "").strip()
                     if u and p:
@@ -137,6 +144,147 @@ def save_untis_credentials(username: str, password: str, target_path: Optional[s
     except Exception as e:
         print(f"Error saving Untis credentials: {e}", file=sys.stderr)
         return False
+
+
+def is_moodle_logged_in() -> bool:
+    """Checks whether valid Moodle cookies or saved credentials exist."""
+    if get_saved_moodle_cookies():
+        return True
+    path, creds = get_existing_moodle_credentials()
+    if creds and creds.get("username") and creds.get("password"):
+        return True
+    return False
+
+
+def is_teams_logged_in() -> bool:
+    """Checks whether Microsoft Teams is configured or has a valid browser profile."""
+    if os.path.exists(TEAMS_STATUS_FILE):
+        try:
+            with open(TEAMS_STATUS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if data.get("configured", False):
+                    return True
+        except Exception:
+            pass
+    if os.path.isdir(TEAMS_PROFILE_DIR):
+        def_dir = os.path.join(TEAMS_PROFILE_DIR, "Default")
+        if os.path.isdir(def_dir) and len(os.listdir(def_dir)) > 3:
+            return True
+    return False
+
+
+def is_untis_logged_in() -> bool:
+    """Checks whether WebUntis credentials exist."""
+    path, creds = get_existing_untis_credentials()
+    if creds and creds.get("username") and creds.get("password"):
+        return True
+    return False
+
+
+def get_platform_login_status() -> Dict[str, bool]:
+    """Returns a dictionary mapping platform keys ('moodle', 'teams', 'untis') to boolean login states."""
+    return {
+        "moodle": is_moodle_logged_in(),
+        "teams": is_teams_logged_in(),
+        "untis": is_untis_logged_in(),
+    }
+
+
+def is_git_logged_in() -> bool:
+    """Checks whether Git Cloud-Sync is configured."""
+    try:
+        from git_sync_service import is_git_configured
+        return is_git_configured()
+    except Exception:
+        return False
+
+
+def logout_moodle(task_mgr=None) -> Tuple[bool, str]:
+    """Logs out from Moodle, deletes credentials, cookies, and cached tasks."""
+    try:
+        if os.path.exists(MOODLE_COOKIE_FILE):
+            try:
+                os.remove(MOODLE_COOKIE_FILE)
+            except Exception:
+                pass
+        for path in MOODLE_CREDS_POSSIBLE_PATHS:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+        if task_mgr and hasattr(task_mgr, "clear_platform_tasks"):
+            task_mgr.clear_platform_tasks("moodle")
+        return True, "Moodle logged out and cache cleared."
+    except Exception as e:
+        return False, f"Failed to log out of Moodle: {e}"
+
+
+def logout_teams(task_mgr=None) -> Tuple[bool, str]:
+    """Logs out from Microsoft Teams, deletes browser profile, status file, and cached tasks."""
+    try:
+        if os.path.exists(TEAMS_STATUS_FILE):
+            try:
+                os.remove(TEAMS_STATUS_FILE)
+            except Exception:
+                pass
+        if os.path.exists(TEAMS_PROFILE_DIR):
+            try:
+                shutil.rmtree(TEAMS_PROFILE_DIR, ignore_errors=True)
+            except Exception:
+                pass
+        if task_mgr and hasattr(task_mgr, "clear_platform_tasks"):
+            task_mgr.clear_platform_tasks("teams")
+        return True, "Microsoft Teams logged out and cache cleared."
+    except Exception as e:
+        return False, f"Failed to log out of Teams: {e}"
+
+
+def logout_untis() -> Tuple[bool, str]:
+    """Logs out from WebUntis, clears credentials and cache."""
+    try:
+        for path in UNTIS_CREDS_POSSIBLE_PATHS:
+            if os.path.exists(path) and "untis_credentials.json" in os.path.basename(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+        untis_path = os.path.join(CONFIG_DIR, "untis_credentials.json")
+        try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+            with open(untis_path, "w", encoding="utf-8") as f:
+                json.dump({"logged_out": True}, f, indent=2)
+        except Exception:
+            pass
+
+        if os.path.exists(UNTIS_CACHE_FILE):
+            try:
+                os.remove(UNTIS_CACHE_FILE)
+            except Exception:
+                pass
+        if os.path.exists(UNTIS_PROFILE_DIR):
+            try:
+                shutil.rmtree(UNTIS_PROFILE_DIR, ignore_errors=True)
+            except Exception:
+                pass
+        return True, "WebUntis logged out and cache cleared."
+    except Exception as e:
+        return False, f"Failed to log out of WebUntis: {e}"
+
+
+def logout_git() -> Tuple[bool, str]:
+    """Disconnects Git Cloud-Sync and clears local git cache."""
+    try:
+        from git_sync_service import GitSyncService
+        return GitSyncService.disconnect()
+    except Exception as e:
+        return False, f"Failed to disconnect Git: {e}"
+
+
+def has_missing_logins() -> bool:
+    """Returns True if any enabled platform (Moodle, Teams, WebUntis) is not logged in."""
+    status = get_platform_login_status()
+    return any(not ok for platform, ok in status.items() if is_platform_enabled(platform))
 
 
 
@@ -180,6 +328,41 @@ def login_moodle_with_creds(page, context, username: str, password: str, moodle_
         return True
     except Exception:
         return False
+
+
+def _humanize_request_error(e: Exception, service_name: str = "Moodle") -> str:
+    """Translates raw urllib3 / requests network exceptions into user-friendly diagnostic messages."""
+    if isinstance(e, requests.exceptions.Timeout):
+        return f"Connection timeout: {service_name} server is not responding."
+
+    if isinstance(e, requests.exceptions.ConnectionError):
+        err_str = str(e).lower()
+        if "10061" in err_str or "refused" in err_str:
+            return f"Connection refused: {service_name} server is offline or requires school VPN."
+        if "getaddrinfo" in err_str or "nameresolution" in err_str or "not known" in err_str:
+            return f"{service_name} server not found: Check URL or internet connection."
+        if "ssl" in err_str or "certificate" in err_str:
+            return f"SSL certificate verification failed for {service_name} server."
+        return f"Could not connect to {service_name} server: Network or host unreachable."
+
+    if isinstance(e, requests.exceptions.HTTPError):
+        status = e.response.status_code if getattr(e, "response", None) is not None else "unknown"
+        return f"{service_name} server returned HTTP error: {status}"
+
+    err_str = str(e).lower()
+    if "10061" in err_str or "refused" in err_str:
+        return f"Connection refused: {service_name} server is offline or requires school VPN."
+    if "timeout" in err_str:
+        return f"Connection timeout: {service_name} server is not responding."
+
+    return f"Network error connecting to {service_name}: {type(e).__name__}"
+
+
+def _is_network_connectivity_error(message: str) -> bool:
+    """Checks whether an error message indicates an unreachable/offline host or network failure."""
+    msg = message.lower()
+    keywords = ["refused", "timeout", "not found", "unreachable", "dns", "ssl", "offline", "verbindung fehlgeschlagen"]
+    return any(kw in msg for kw in keywords)
 
 
 def login_moodle_http(username: str, password: str, moodle_url: Optional[str] = None) -> AuthResult:
@@ -245,7 +428,7 @@ def login_moodle_http(username: str, password: str, moodle_url: Optional[str] = 
         save_moodle_cookies(cookie_list)
         return AuthResult(True, "OK")
     except requests.exceptions.RequestException as e:
-        return AuthResult(False, f"Verbindung zu Moodle fehlgeschlagen: {e}")
+        return AuthResult(False, _humanize_request_error(e, "Moodle"))
     except Exception as e:
         return AuthResult(False, f"Fehler bei Moodle-Authentifizierung: {e}")
 
@@ -279,6 +462,11 @@ def login_moodle_direct(username: str, password: str, moodle_url: Optional[str] 
 
     # Falls der Fehler spezifisch "Ungültige Anmeldedaten" war, hat Moodle den Login abgewiesen
     if any(kw in http_res.message.lower() for kw in ["ungültig", "invalid", "kennwort", "password"]):
+        return http_res
+
+    # Bei echten Netzwerk- und Verbindungsproblemen (Server offline, Refused, Timeout)
+    # macht ein träger Browser-Fallback keinen Sinn und würde nur 15-20s Wartezeit verursachen.
+    if _is_network_connectivity_error(http_res.message):
         return http_res
 
     # 2. Browser-Fallback (falls Moodle JavaScript oder spezielles SSO verlangt)

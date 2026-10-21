@@ -18,7 +18,7 @@ WORKSPACE_DIR = os.path.dirname(SRC_DIR)
 USERPROFILE = os.environ.get("USERPROFILE") or os.path.expanduser("~")
 
 # Anwendungs-Version & GitHub Repository
-APP_VERSION = "1.0.11"
+APP_VERSION = "1.1.0"
 GITHUB_REPO = "X4nd109/Aufgaben-Detector"
 
 
@@ -1220,3 +1220,60 @@ def remove_git_sync_config() -> None:
             os.remove(GIT_SYNC_CONFIG_FILE)
         except Exception:
             pass
+
+
+DEFAULT_ENABLED_PLATFORMS = {
+    "teams": True,
+    "moodle": True,
+    "untis": True,
+    "git": True,
+}
+
+
+def load_enabled_platforms() -> dict:
+    """Lädt die aktivierten Plattformen aus config.json (Default: alle aktiv)."""
+    for path in [CONFIG_FILE, APP_CONFIG_FILE]:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict) and "enabled_platforms" in data:
+                        raw = data["enabled_platforms"]
+                        if isinstance(raw, dict):
+                            res = dict(DEFAULT_ENABLED_PLATFORMS)
+                            for k in res:
+                                if k in raw:
+                                    res[k] = bool(raw[k])
+                            return res
+            except Exception:
+                pass
+    return dict(DEFAULT_ENABLED_PLATFORMS)
+
+
+def save_enabled_platforms(enabled: dict) -> None:
+    """Speichert den Aktiv-Status der Plattformen in config.json."""
+    if not isinstance(enabled, dict):
+        return
+    clean_enabled = dict(DEFAULT_ENABLED_PLATFORMS)
+    for k in clean_enabled:
+        if k in enabled:
+            clean_enabled[k] = bool(enabled[k])
+
+    for path in [CONFIG_FILE, APP_CONFIG_FILE]:
+        try:
+            data = {}
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f) or {}
+            data["enabled_platforms"] = clean_enabled
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            print(f"Warning: Could not save enabled platforms to {path}: {e}", file=sys.stderr)
+
+
+def is_platform_enabled(platform: str) -> bool:
+    """Gibt zurück, ob eine Plattform aktiv geschaltet ist."""
+    key = platform.strip().lower()
+    return load_enabled_platforms().get(key, True)

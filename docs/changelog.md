@@ -11,6 +11,56 @@ und dieses Projekt hält sich an [Semantic Versioning](https://semver.org/lang/d
 
 ---
 
+## [1.1.0] - 2026-10-21
+
+### Fixed
+- **Navigation im ExcuseLetterModal (`btn_el_back`)**:
+  - Behoben: Beim Klick auf den `Back`-Button im `ExcuseLetterModal` wurde irrtümlich zusätzlich das Schülerdaten-Konfigurationsmodal (`SchoolConfigModal` / `ExcuseProfileModal`) aufgerufen, anstatt direkt zum `AbsencesScreen` zurückzukehren.
+
+### Added
+- **Verspätungen-Filterbutton im Entschuldigungsschreiben (`ExcuseLetterModal`)**:
+  - Neuer Toggle-Button `#btn_el_filter_lateness` (`⏳ Hide Lateness: ON` / `⏳ Hide Lateness: OFF`) in der rechten unteren Ecke des Dialogs (Tastenkürzel `[L]`).
+  - Standardmäßig aktiv: Blendet Tage mit einer Abwesenheitsdauer unter 50 Minuten (`duration < 50 min`) automatisch aus, sodass standardmäßig nur vollwertige Fehlstunden in der Tabelle und im generierten PDF erscheinen.
+  - Mit einem Klick oder Tastendruck auf `[L]` umschaltbar, um bei Bedarf auch reine Verspätungen anzuzeigen und zu entschuldigen.
+  - Dynamische Anpassung der Tabellenzeilen, der Auswahlfilter und des Zusammenfassungs-Labels.
+- **Exakte Minuten- & Verspätungsberechnung im WebUntis Entschuldigungsschreiben (`ExcuseLetterModal` & PDF)**:
+  - **Exakte Abwesenheitsfenster & Dauer (`MissedLesson`)**:
+    - `match_absences_with_timetable` ermittelt für Teilabwesenheiten und Verspätungen (z.B. Lehrer erfasst 11 Minuten Verspätung) die exakte minutengenaue Schnittmenge (`start_time`, `end_time`, `duration_minutes`) und behält zeitgleich das originale Stundenfenster (`lesson_start_time`, `lesson_end_time`) bei.
+    - Die Tabelle im `AbsencesScreen` zeigt in der Spalte `Time` präzise das verspätete Intervall (z.B. `14:25 - 14:36`) anstelle der vollen 50-Minuten-Stunde.
+  - **Exakte Tagessummen & PDF-Generierung**:
+    - `get_daily_absence_summaries` summiert die tatsächlichen `duration_minutes` pro Tag (z.B. `0:11` oder `0:25`) statt pauschal `hours * 50`. Die Spalte `Periods` zeigt unverändert die Anzahl der betroffenen Schulstunden (`1 periods`).
+    - `create_excuse_pdf` in `src/services/excuse_service.py` parst die minutengenauen Angaben aus `day.duration_str` und berechnet in der Summenzeile die mathematisch exakte Fehlzeit (z.B. `7:16` statt fälschlich `8:20`).
+    - `ExcuseLetterModal` in `src/ui/tui_app.py` aktualisiert das Auswahl-Label dynamisch mit Gesamtstunden und -dauer (`Selected: 2 days (2 periods | 0:36)`).
+  - 3 neue automatisierte Unit-Tests in `tests/test_untis_service.py` und `tests/test_excuse_service.py` (Gesamtsuite: 294 Tests, 100 % Erfolgsquote).
+- **Humanisierte Netzwerk-Fehlerbehandlung bei Moodle-Ausfällen**:
+  - `_humanize_request_error` in `src/core/auth.py` fängt rohe `urllib3` / `requests`-Exceptions (`HTTPSConnectionPool`, `NewConnectionError`, `WinError 10061`) ab und übersetzt sie in klare, prägnante Statusmeldungen auf Englisch (`Connection refused: Moodle server is offline or requires school VPN.`, `Connection timeout: Moodle server is not responding.`, etc.).
+  - `_is_network_connectivity_error` erkennt Verbindungsabbrüche und nicht erreichbare Server.
+- **Fast-Fail ohne Playwright-Verzögerung bei Server-Offline-Zustand**:
+  - `login_moodle_direct` überspringt bei Verbindungsfehlern (Connection Refused, Timeout, DNS-Fehler) sofort den trägen 15-Sekunden-Playwright-Browser-Fallback.
+  - Reduziert die Wartezeit bei Serverausfällen von bis zu ~27 Sekunden auf ~1,5 Sekunden.
+- **TUI Statusanzeige**:
+  - `#moodle_status` in `MoodleLoginModal` mit `width: 100%;` und `height: auto;` ausgestattet für zentrierte, mehrzeilige Lesbarkeit ohne Text-Clipping.
+- **Bereinigung von Login-Feldern & Platzhaltern**:
+  - `TeamsSetupModal`: E-Mail-Eingabefeld wird beim Öffnen des Modals nicht mehr automatisch vorausgefüllt.
+  - `MoodleLoginModal` & `UntisSetupModal`: Placeholder im Benutzername-Feld auf neutrales `"Username"` bereinigt (Hardcoded-Beispielkennungen entfernt).
+- **Plattform-Deaktivierung & Abmelden im Login-Menü (`LoginChoiceModal`)**:
+  - **Kombinierter Action-Button (`Enable` / `Disable` / `🚪 Log Out`)**:
+    - Platziert die Toggle- und Logout-Funktionalität auf einem einzelnen Button-Slot am rechten Rand (spart Platz und beseitigt die linke Schalter-Spalte vollständig).
+    - Wenn angemeldet: Zeigt `🚪 Log Out` (variant="error", leert Cache und Credentials).
+    - Wenn nicht angemeldet & aktiv: Zeigt `Disable` (variant="default", schaltet die Plattform aus).
+    - Wenn deaktiviert: Zeigt `Enable` (variant="success", schaltet die Plattform ein).
+    - Git Sync: Reine Statuszeile ohne Action-Buttons im Auswahlmenü.
+    - Dialogbreite auf schlanke `76` Spalten optimiert ohne jedes Clipping.
+    - Deaktivierte Plattformen werden optisch als `[dim]Disabled[/dim]` gekennzeichnet und von Sync sowie LoginReminderModal ignoriert.
+- **Login-Prüfung & LoginReminderModal bei jedem Sync**:
+  - `get_platform_login_status` und `has_missing_logins` in `src/core/auth.py` bündeln die Authentifizierungsprüfung für Moodle, Teams und WebUntis an einer zentralen Stelle.
+  - Neues Modal `LoginReminderModal` (auf Englisch) informiert am Ende jedes automatischen oder manuellen Syncs über nicht angemeldete Dienste mit Status-Badges (`✓ Signed in` vs. `✗ Not signed in`).
+  - Direkte Weiterleitung ins Login-Auswahlmenü per `[🔑 Open Login Menu [ENTER]]` sowie Schließen per `[Dismiss [ESC]]` (erscheint beim nächsten Sync erneut, falls weiterhin Logins fehlen).
+  - Erscheint nur auf dem Haupt-Dashboard, um laufende Aktionen in Einstellungen oder Detaildialogen nicht zu unterbrechen.
+- 9 neue automatisierte Unit-Tests in `tests/test_auth_logins.py` und `tests/test_tui_app.py` (Gesamtsuite: 283 Tests, 100 % Erfolgsquote).
+
+---
+
 ## [1.0.11] - 2026-10-21
 
 ### Added

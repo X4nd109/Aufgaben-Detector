@@ -1,11 +1,32 @@
 # Current Project State & Session Handoff — Aufgaben-Detector
 
 > **Last Updated**: 2026-10-21  
-> **Active Milestone**: Milestone 3 — In-App Auto-Update, Sync Performance & UI Polish (v1.0.11)
+> **Active Milestone**: Milestone 3 — In-App Auto-Update, Sync Performance & UI Polish (v1.1.0)
 
 ---
 
 ## 1. Completed Tasks & Milestones
+
+- [x] **Release v1.1.0 — WebUntis Lateness & Excuse Letter Polish, Login Reminder & Platform Toggle**:
+  - **Minutengenaue Verspätungs- & Fehlzeitenberechnung**:
+    - `match_absences_with_timetable` ermittelt für Verspätungen (z.B. eingetragene 11 oder 25 Minuten) die exakte minutengenaue Schnittmenge (`start_time`, `end_time`, `duration_minutes`) und behält das Unterrichtsfenster (`lesson_start_time`, `lesson_end_time`) bei.
+    - Die Detailtabelle im `AbsencesScreen` zeigt in der Spalte `Time` das reale Abwesenheitsintervall (z.B. `14:25 - 14:36`).
+    - `get_daily_absence_summaries` und `create_excuse_pdf` summieren die tatsächliche Abwesenheitsdauer exakt (z.B. `7:16` statt pauschal `8:20`).
+  - **Verspätungen-Filterbutton (`ExcuseLetterModal`)**:
+    - Neuer Toggle-Button `#btn_el_filter_lateness` (`⏳ Hide Lateness: ON` / `⏳ Hide Lateness: OFF`, Shortcut `[L]`) in der rechten unteren Ecke.
+    - Standardmäßig aktiv: Filtert Fehltage mit einer Dauer von unter 50 Minuten (`< 50 min`) automatisch aus, sodass standardmäßig nur vollwertige Fehlstunden im Entschuldigungs-PDF aufgeführt werden.
+    - Behoben: `Back`-Button im `ExcuseLetterModal` kehrt unmittelbar zum `AbsencesScreen` zurück ohne versehentliches Öffnen des Schülerdaten-Modals.
+  - **Plattform-Deaktivierung & Abmelden im Login-Menü (`LoginChoiceModal`)**:
+    - Kombinierter Action-Button (`Enable` / `Disable` / `🚪 Log Out`) am rechten Rand.
+    - Leeren von Cache und Credentials bei Abmeldung; Deaktivieren schaltet Sync und Erinnerungen für ungenutzte Plattformen stumm.
+    - Persistente Speicherung in `config.json` unter `enabled_platforms`.
+  - **Humanisierte Netzwerk-Fehlerbehandlung & Fast-Fail**:
+    - `_humanize_request_error` fängt rohe urllib3/requests Tracebacks ab und gibt präzise englische Fehlermeldungen aus.
+    - Schneller Abbruch bei Serverausfällen ohne 15s Playwright-Wartezeit.
+    - Neutraler Platzhalter `"Username"` und Bereinigung der E-Mail-Vorausfüllung in Teams.
+  - **Login-Prüfung & LoginReminderModal bei jedem Sync**:
+    - Automatischer Reminder am Ende eines Syncs, falls genutzte Plattformen nicht angemeldet sind, mit direkter Weiterleitung per Enter ins Login-Menü.
+  - 18 neue automatisierte Unit-Tests in `tests/test_auth_logins.py`, `tests/test_excuse_service.py`, `tests/test_tui_app.py` und `tests/test_untis_service.py` (Gesamtsuite: 294 Tests, 100 % Erfolgsquote).
 
 - [x] **Moodle & WebUntis Login Robustness & Cross-Device Compatibility**:
   - **Browserloses HTTP-Moodle-Login (`login_moodle_http`)**:

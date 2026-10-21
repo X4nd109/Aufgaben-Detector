@@ -169,7 +169,16 @@ def create_excuse_pdf(
         pdf.set_dash_pattern()
 
         total_hours += day.school_hours
-        total_minutes += day.school_hours * 50
+        day_mins = 0
+        if day.duration_str and ":" in day.duration_str:
+            try:
+                parts = day.duration_str.split(":")
+                day_mins = int(parts[0]) * 60 + int(parts[1])
+            except Exception:
+                day_mins = day.school_hours * 50
+        else:
+            day_mins = day.school_hours * 50
+        total_minutes += day_mins
         current_y += 18
 
     # Falls keine Fehltage ausgewählt wurden (Leerzeile)

@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Tuple
 
 
-from config import CACHE_FILE, DELETED_TASKS_FILE, APP_DELETED_TASKS_FILE, DELETED_MANUAL_TASKS_FILE, APP_DELETED_MANUAL_TASKS_FILE, HIDDEN_TASKS_FILE, APP_HIDDEN_TASKS_FILE, CUSTOM_TASKS_FILE, APP_CUSTOM_TASKS_FILE, extract_teacher
+from config import CACHE_FILE, DELETED_TASKS_FILE, APP_DELETED_TASKS_FILE, DELETED_MANUAL_TASKS_FILE, APP_DELETED_MANUAL_TASKS_FILE, HIDDEN_TASKS_FILE, APP_HIDDEN_TASKS_FILE, CUSTOM_TASKS_FILE, APP_CUSTOM_TASKS_FILE, extract_teacher, is_platform_enabled
 from models import Task
 import moodle_service
 import teams_service
@@ -524,6 +524,18 @@ class TaskManager:
         self.hidden_ids.add(tid)
         self.save_hidden_tasks(auto_push=True)
 
+    def clear_platform_tasks(self, platform: str) -> int:
+        """Entfernt alle gecachten Aufgaben einer bestimmten Plattform und speichert den Cache."""
+        plat_lower = platform.strip().lower()
+        removed_count = 0
+        with self._cache_lock:
+            initial_count = len(self.tasks)
+            self.tasks = [t for t in self.tasks if getattr(t, "platform", "").lower() != plat_lower]
+            removed_count = initial_count - len(self.tasks)
+        if removed_count > 0:
+            self.save_cache()
+        return removed_count
+
     def restore_task(self, task_id: str):
         """Stellt eine zuvor ausgeblendete oder gelöschte Aufgabe wieder her."""
         tid = str(task_id).strip()
@@ -739,6 +751,8 @@ class TaskManager:
         teams_ok = False
 
         def fetch_moodle():
+            if not is_platform_enabled("moodle"):
+                return []
             nonlocal moodle_ok, m_tasks
             try:
                 if on_progress:
@@ -761,6 +775,8 @@ class TaskManager:
                 return []
 
         def fetch_teams():
+            if not is_platform_enabled("teams"):
+                return []
             nonlocal teams_ok, t_tasks
             try:
                 if on_progress:

@@ -139,6 +139,52 @@ class TestExcuseService(unittest.TestCase):
         self.assertIn("SWP PM", d_oct2.subjects)
         self.assertIn("D", d_oct2.subjects)
 
+    def test_daily_absence_lateness_aggregation(self):
+        """Prüft, dass Verspätungen mit exakter Dauer (z.B. 11 Min) summiert werden statt 50 Min."""
+        late_lesson = MissedLesson(
+            date="2026-10-20",
+            subject="INFI",
+            period_num=7,
+            start_time="14:25",
+            end_time="14:36",
+            duration_minutes=11,
+            reason="Verspätung",
+            absence_status="Offen",
+        )
+        summary = SubjectAbsenceSummary(subject="INFI", total_hours=1, missed_lessons=[late_lesson])
+        daily = get_daily_absence_summaries([summary])
+        self.assertEqual(len(daily), 1)
+        self.assertEqual(daily[0].school_hours, 1)
+        self.assertEqual(daily[0].duration_str, "0:11")
+
+    def test_pdf_generation_lateness_exact_sum(self):
+        """Prüft, dass im PDF die exakte Minutensumme errechnet wird (z.B. 0:11 + 0:50 = 1:01)."""
+        out_pdf = os.path.join(self.temp_dir, "test_lateness_sum.pdf")
+        day1 = DailyAbsenceSummary(
+            date="2026-10-20",
+            date_display="20.10.2026",
+            school_hours=1,
+            duration_str="0:11",
+            subjects=["INFI"],
+            status="Offen",
+        )
+        day2 = DailyAbsenceSummary(
+            date="2026-10-21",
+            date_display="21.10.2026",
+            school_hours=1,
+            duration_str="0:50",
+            subjects=["SWP"],
+            status="Offen",
+        )
+        created_path = create_excuse_pdf([day1, day2], output_path=out_pdf)
+        self.assertTrue(os.path.exists(created_path))
+        doc = fitz.open(created_path)
+        text = doc[0].get_text()
+        self.assertIn("0:11", text)
+        self.assertIn("0:50", text)
+        # Summe: 11 + 50 = 61 Min -> 1:01 (und NICHT 2 * 50 = 1:40)
+        self.assertIn("1:01", text)
+
     def test_pdf_generation_content_and_layout(self):
         """Erzeugt ein PDF und validiert alle Texte und Elemente mit PyMuPDF."""
         out_pdf = os.path.join(self.temp_dir, "test_excuse.pdf")
@@ -309,6 +355,55 @@ class TestExcuseTUIModals(unittest.IsolatedAsyncioTestCase):
                 btn_gen = excuse_modal.query_one("#btn_el_generate", Button)
                 btn_gen.press()
                 await pilot.pause()
+
+            # Teste Back Button: Soll zu AbsencesScreen zurückkehren und NICHT SchoolConfigModal öffnen!
+            btn_back = excuse_modal.query_one("#btn_el_back", Button)
+            btn_back.press()
+            await pilot.pause()
+            self.assertIsInstance(app.screen, AbsencesScreen)
+
+    async def test_excuse_letter_modal_hide_lateness_toggle(self):
+        from tui_app import AufgabenDetectorApp, ExcuseLetterModal
+        from textual.widgets import Button, DataTable
+
+        lessons = [
+            MissedLesson(date="2026-10-02", subject="SWP", period_num=1, start_time="08:00", end_time="08:50", duration_minutes=50),
+            MissedLesson(date="2026-10-20", subject="INFI", period_num=7, start_time="14:25", end_time="14:36", duration_minutes=11, reason="Verspätung"),
+        ]
+        summaries = [
+            SubjectAbsenceSummary(subject="SWP", total_hours=1, missed_lessons=[lessons[0]]),
+            SubjectAbsenceSummary(subject="INFI", total_hours=1, missed_lessons=[lessons[1]]),
+        ]
+
+        app = AufgabenDetectorApp()
+        async with app.run_test() as pilot:
+            excuse_modal = ExcuseLetterModal(summaries)
+            app.push_screen(excuse_modal)
+            await pilot.pause()
+
+            # 1. Standardmäßig aktiv: Verspätung (11 Min < 50 Min) ist ausgeblendet
+            self.assertTrue(excuse_modal.hide_lateness)
+            btn_toggle = excuse_modal.query_one("#btn_el_filter_lateness", Button)
+            self.assertIn("ON", str(btn_toggle.label))
+            table = excuse_modal.query_one("#excuse_table", DataTable)
+            self.assertEqual(table.row_count, 1)
+            self.assertEqual(len(excuse_modal.visible_absences), 1)
+            self.assertEqual(excuse_modal.visible_absences[0].date, "2026-10-02")
+
+            # 2. Button drücken -> deaktivieren (Verspätungen einblenden)
+            btn_toggle.press()
+            await pilot.pause()
+            self.assertFalse(excuse_modal.hide_lateness)
+            self.assertIn("OFF", str(btn_toggle.label))
+            self.assertEqual(table.row_count, 2)
+            self.assertEqual(len(excuse_modal.visible_absences), 2)
+
+            # 3. Nochmal drücken -> wieder aktivieren (ausblenden)
+            btn_toggle.press()
+            await pilot.pause()
+            self.assertTrue(excuse_modal.hide_lateness)
+            self.assertIn("ON", str(btn_toggle.label))
+            self.assertEqual(table.row_count, 1)
 
 
 if __name__ == "__main__":

@@ -30,7 +30,7 @@ from textual.reactive import reactive
 from textual.screen import Screen, ModalScreen
 from textual.widget import Widget
 from textual.message import Message
-from textual.widgets import Button, DataTable, Header, Input, Label, Markdown, Static, TextArea, LoadingIndicator, ProgressBar, Select
+from textual.widgets import Button, Checkbox, DataTable, Header, Input, Label, Markdown, Static, TextArea, LoadingIndicator, ProgressBar, Select
 from textual.command import CommandPalette, Provider, DiscoveryHit, Hit, Hits, CommandInput, SearchIcon, CommandList
 try:
     from src.ui.range_slider import TwoThumbRangeSlider
@@ -4327,6 +4327,8 @@ class MoodleLoginModal(ModalScreen[bool]):
         margin-top: 1;
         margin-bottom: 1;
         text-align: center;
+        width: 100%;
+        height: auto;
     }
     .m_input {
         margin-bottom: 1;
@@ -4347,7 +4349,7 @@ class MoodleLoginModal(ModalScreen[bool]):
             yield Label("🎓 Moodle Login", id="moodle_title")
             yield Label("Credentials are stored locally on your PC only.", id="moodle_desc")
             yield Input(value=current_url, placeholder="Moodle URL (z.B. https://moodle.spengergasse.at)", id="inp_m_url", classes="m_input")
-            yield Input(placeholder="Username (e.g. end240102)", id="inp_m_user", classes="m_input")
+            yield Input(placeholder="Username", id="inp_m_user", classes="m_input")
             yield Input(placeholder="Password", password=True, id="inp_m_pass", classes="m_input")
             yield Label("", id="moodle_status")
             with Horizontal(id="moodle_buttons"):
@@ -4503,21 +4505,6 @@ class TeamsSetupModal(ModalScreen[bool]):
             yield Button("🔑 Log in with Passkey / Browser", id="btn_t_passkey", classes="t_sec_btn", variant="warning")
             yield Button("🔍 Check existing session", id="btn_t_check", classes="t_sec_btn", variant="success")
 
-    def on_mount(self) -> None:
-        try:
-            from auth import get_existing_moodle_credentials
-            _, creds = get_existing_moodle_credentials()
-            if creds and creds.get("username"):
-                u = creds["username"].strip()
-                if "@" in u:
-                    self.query_one("#inp_t_email", Input).value = u
-                elif u:
-                    self.query_one("#inp_t_email", Input).value = f"{u}@spengergasse.at"
-            else:
-                self.query_one("#inp_t_email", Input).value = ""
-        except Exception:
-            pass
-
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
         if bid == "btn_t_cancel":
@@ -4671,15 +4658,130 @@ class TeamsSetupModal(ModalScreen[bool]):
         self.dismiss(False)
 
 
+class LoginReminderModal(ModalScreen[Optional[str]]):
+    """Modal alert notifying the user when one or more school platforms are not signed in."""
+
+    DEFAULT_CSS = """
+    LoginReminderModal {
+        align: center middle;
+    }
+    #login_reminder_dialog {
+        width: 68;
+        max-height: 85%;
+        height: auto;
+        border: thick #fab387;
+        background: #1e1e2e;
+        padding: 1 2;
+    }
+    #login_reminder_title {
+        text-align: center;
+        text-style: bold;
+        margin-bottom: 1;
+        color: #fab387;
+    }
+    #login_reminder_desc {
+        text-align: center;
+        color: #cdd6f4;
+        margin-bottom: 1;
+    }
+    #login_reminder_box {
+        width: 100%;
+        height: auto;
+        border: solid #45475a;
+        background: #181825;
+        padding: 1 2;
+        margin-bottom: 1;
+    }
+    .login_platform_row {
+        height: 1;
+        margin-bottom: 1;
+    }
+    .login_platform_name {
+        width: 24;
+        text-style: bold;
+        color: #cdd6f4;
+    }
+    .login_platform_status {
+        width: auto;
+        text-style: bold;
+    }
+    #login_reminder_buttons {
+        height: auto;
+        align: center middle;
+        margin-top: 1;
+    }
+    #login_reminder_buttons Button {
+        margin: 0 1;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss_modal", "Dismiss"),
+        Binding("enter", "open_logins", "Open Login Menu"),
+        Binding("l", "open_logins", "Open Login Menu", show=False),
+    ]
+
+    def compose(self) -> ComposeResult:
+        from auth import get_platform_login_status
+        from config import is_platform_enabled
+        status = get_platform_login_status()
+
+        def _fmt(plat: str) -> str:
+            if not is_platform_enabled(plat):
+                return "[dim]Disabled[/dim]"
+            return "[green]✓ Signed in[/green]" if status.get(plat) else "[red]✗ Not signed in[/red]"
+
+        moodle_lbl = _fmt("moodle")
+        teams_lbl = _fmt("teams")
+        untis_lbl = _fmt("untis")
+
+        with Vertical(id="login_reminder_dialog"):
+            yield Label("🔑 Action Required: Service Logins", id="login_reminder_title")
+            yield Label(
+                "One or more school services are not connected.\n"
+                "Sign in to detect and synchronize all homework and absences:",
+                id="login_reminder_desc",
+            )
+            with Vertical(id="login_reminder_box"):
+                with Horizontal(classes="login_platform_row"):
+                    yield Label("🎓 Moodle:", classes="login_platform_name")
+                    yield Label(moodle_lbl, classes="login_platform_status")
+                with Horizontal(classes="login_platform_row"):
+                    yield Label("👥 Microsoft Teams:", classes="login_platform_name")
+                    yield Label(teams_lbl, classes="login_platform_status")
+                with Horizontal(classes="login_platform_row"):
+                    yield Label("📅 WebUntis:", classes="login_platform_name")
+                    yield Label(untis_lbl, classes="login_platform_status")
+            with Horizontal(id="login_reminder_buttons"):
+                yield Button("🔑 Open Login Menu [ENTER]", id="btn_open_login_menu", variant="primary")
+                yield Button("Dismiss [ESC]", id="btn_dismiss_login", variant="default")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        bid = event.button.id
+        if bid == "btn_open_login_menu":
+            self.dismiss("open_logins")
+        elif bid == "btn_dismiss_login":
+            self.dismiss(None)
+
+    def action_open_logins(self) -> None:
+        self.dismiss("open_logins")
+
+    def action_dismiss_modal(self) -> None:
+        self.dismiss(None)
+
+    def key_escape(self) -> None:
+        self.dismiss(None)
+
+
 class LoginChoiceModal(ModalScreen[Optional[str]]):
-    """Selection dialog for login (Teams, Moodle, WebUntis) with per-platform status indicators."""
+    """Selection dialog for login (Teams, Moodle, WebUntis, Git) with combined Activate/Deactivate/Logout action buttons."""
 
     DEFAULT_CSS = """
     LoginChoiceModal {
         align: center middle;
     }
     #login_choice_dialog {
-        width: 64;
+        width: 76;
         height: auto;
         border: thick #fab387;
         background: #1e1e2e;
@@ -4697,12 +4799,19 @@ class LoginChoiceModal(ModalScreen[Optional[str]]):
         margin-bottom: 1;
     }
     .login_choice_btn {
-        width: 34;
+        width: 28;
     }
     .login_status_lbl {
+        width: 22;
         margin-left: 2;
         padding-top: 1;
         text-style: bold;
+    }
+    .login_action_btn {
+        width: 15;
+        min-width: 14;
+        margin-left: 1;
+        padding: 0 1;
     }
     #btn_login_cancel {
         width: 100%;
@@ -4723,47 +4832,16 @@ class LoginChoiceModal(ModalScreen[Optional[str]]):
     ]
 
     def _is_teams_logged_in(self) -> bool:
-        import json
-        from config import TEAMS_STATUS_FILE, TEAMS_PROFILE_DIR
-        if os.path.exists(TEAMS_STATUS_FILE):
-            try:
-                with open(TEAMS_STATUS_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    if data.get("configured", False):
-                        return True
-            except Exception:
-                pass
-        if os.path.isdir(TEAMS_PROFILE_DIR):
-            def_dir = os.path.join(TEAMS_PROFILE_DIR, "Default")
-            if os.path.isdir(def_dir) and len(os.listdir(def_dir)) > 3:
-                return True
-        return False
+        from auth import is_teams_logged_in
+        return is_teams_logged_in()
 
     def _is_moodle_logged_in(self) -> bool:
-        from auth import get_saved_moodle_cookies, get_existing_moodle_credentials
-        if get_saved_moodle_cookies():
-            return True
-        path, creds = get_existing_moodle_credentials()
-        if creds and creds.get("username") and creds.get("password"):
-            return True
-        return False
+        from auth import is_moodle_logged_in
+        return is_moodle_logged_in()
 
     def _is_untis_logged_in(self) -> bool:
-        import json
-        from auth import get_existing_untis_credentials
-        from config import UNTIS_CACHE_FILE
-        path, creds = get_existing_untis_credentials()
-        if creds and creds.get("username") and creds.get("password"):
-            return True
-        if os.path.exists(UNTIS_CACHE_FILE):
-            try:
-                with open(UNTIS_CACHE_FILE, "r", encoding="utf-8") as f:
-                    cdata = json.load(f)
-                    if isinstance(cdata, list) and len(cdata) > 0:
-                        return True
-            except Exception:
-                pass
-        return False
+        from auth import is_untis_logged_in
+        return is_untis_logged_in()
 
     def _is_git_logged_in(self) -> bool:
         try:
@@ -4772,36 +4850,118 @@ class LoginChoiceModal(ModalScreen[Optional[str]]):
         except Exception:
             return False
 
+    def _is_plat_logged_in(self, plat: str) -> bool:
+        if plat == "teams":
+            return self._is_teams_logged_in()
+        elif plat == "moodle":
+            return self._is_moodle_logged_in()
+        elif plat == "untis":
+            return self._is_untis_logged_in()
+        elif plat == "git":
+            return self._is_git_logged_in()
+        return False
+
+    def _get_platform_info(self, plat: str) -> Tuple[bool, str, bool]:
+        from config import is_platform_enabled
+        enabled = is_platform_enabled(plat)
+        logged_in = self._is_plat_logged_in(plat)
+
+        if not enabled:
+            return False, "[dim]Disabled[/dim]", False
+
+        if logged_in:
+            lbl = "[green]Signed in ✓[/green]" if plat != "git" else "[green]Connected ✓[/green]"
+            return True, lbl, True
+        else:
+            lbl = "[red]Not signed in ✗[/red]" if plat != "git" else "[dim]Not configured ✗[/dim]"
+            return True, lbl, False
+
+    def _get_action_btn_props(self, plat: str) -> Tuple[str, str]:
+        from config import is_platform_enabled
+        enabled = is_platform_enabled(plat)
+        logged_in = self._is_plat_logged_in(plat)
+
+        if logged_in:
+            return "🚪 Log Out", "error"
+        elif not enabled:
+            return "Enable", "success"
+        else:
+            return "Disable", "default"
+
     def compose(self) -> ComposeResult:
-        teams_ok = self._is_teams_logged_in()
-        moodle_ok = self._is_moodle_logged_in()
-        untis_ok = self._is_untis_logged_in()
-        git_ok = self._is_git_logged_in()
-
-        teams_lbl = "[green]Signed in ✓[/green]" if teams_ok else "[red]Not signed in ✗[/red]"
-        moodle_lbl = "[green]Signed in ✓[/green]" if moodle_ok else "[red]Not signed in ✗[/red]"
-        untis_lbl = "[green]Signed in ✓[/green]" if untis_ok else "[red]Not signed in ✗[/red]"
-        git_lbl = "[green]Connected ✓[/green]" if git_ok else "[dim]Not configured ✗[/dim]"
-
         with Vertical(id="login_choice_dialog"):
             yield Label("🔑 Select Login / Platform", id="login_choice_title")
+
+            # 1. Teams
+            t_enabled, t_lbl, t_logged = self._get_platform_info("teams")
+            t_act_lbl, t_act_var = self._get_action_btn_props("teams")
             with Horizontal(classes="login_choice_row"):
-                yield Button("👥 Teams Login [1/T]", id="btn_login_teams", classes="login_choice_btn", variant="primary")
-                yield Label(teams_lbl, classes="login_status_lbl")
+                yield Button("👥 Teams [1/T]", id="btn_login_teams", classes="login_choice_btn", variant="primary", disabled=not t_enabled)
+                yield Label(t_lbl, id="lbl_status_teams", classes="login_status_lbl")
+                yield Button(t_act_lbl, id="btn_action_teams", classes="login_action_btn", variant=t_act_var)
+
+            # 2. Moodle
+            m_enabled, m_lbl, m_logged = self._get_platform_info("moodle")
+            m_act_lbl, m_act_var = self._get_action_btn_props("moodle")
             with Horizontal(classes="login_choice_row"):
-                yield Button("🎓 Moodle Login [2/M]", id="btn_login_moodle", classes="login_choice_btn", variant="warning")
-                yield Label(moodle_lbl, classes="login_status_lbl")
+                yield Button("🎓 Moodle [2/M]", id="btn_login_moodle", classes="login_choice_btn", variant="warning", disabled=not m_enabled)
+                yield Label(m_lbl, id="lbl_status_moodle", classes="login_status_lbl")
+                yield Button(m_act_lbl, id="btn_action_moodle", classes="login_action_btn", variant=m_act_var)
+
+            # 3. Untis
+            u_enabled, u_lbl, u_logged = self._get_platform_info("untis")
+            u_act_lbl, u_act_var = self._get_action_btn_props("untis")
             with Horizontal(classes="login_choice_row"):
-                yield Button("📅 WebUntis Login [3/U]", id="btn_login_untis", classes="login_choice_btn", variant="success")
-                yield Label(untis_lbl, classes="login_status_lbl")
+                yield Button("📅 Untis [3/U]", id="btn_login_untis", classes="login_choice_btn", variant="success", disabled=not u_enabled)
+                yield Label(u_lbl, id="lbl_status_untis", classes="login_status_lbl")
+                yield Button(u_act_lbl, id="btn_action_untis", classes="login_action_btn", variant=u_act_var)
+
+            # 4. Git (Clean single row without toggle/logout buttons)
+            g_enabled, g_lbl, g_logged = self._get_platform_info("git")
             with Horizontal(classes="login_choice_row"):
-                yield Button("🐙 Git Cloud-Sync [4/G]", id="btn_login_git", classes="login_choice_btn", variant="default")
-                yield Label(git_lbl, classes="login_status_lbl")
+                yield Button("🐙 Git Sync [4/G]", id="btn_login_git", classes="login_choice_btn", variant="default")
+                yield Label(g_lbl, id="lbl_status_git", classes="login_status_lbl")
+
             yield Button("↩️ Back [ESC]", id="btn_login_cancel", variant="default")
+
+    def _refresh_row_status(self, plat: str) -> None:
+        try:
+            enabled, lbl_text, logged_in = self._get_platform_info(plat)
+            lbl = self.query_one(f"#lbl_status_{plat}", Label)
+            lbl.update(lbl_text)
+
+            btn_login = self.query_one(f"#btn_login_{plat}", Button)
+            btn_login.disabled = not enabled
+
+            if plat in ("teams", "moodle", "untis"):
+                action_lbl, action_var = self._get_action_btn_props(plat)
+                btn_action = self.query_one(f"#btn_action_{plat}", Button)
+                btn_action.label = action_lbl
+                btn_action.variant = action_var
+        except Exception:
+            pass
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
-        if bid == "btn_login_teams":
+        if not bid:
+            return
+        if bid in ("btn_action_teams", "btn_action_moodle", "btn_action_untis"):
+            plat = bid.replace("btn_action_", "")
+            from config import is_platform_enabled, load_enabled_platforms, save_enabled_platforms
+            if self._is_plat_logged_in(plat):
+                if plat == "teams":
+                    self._handle_logout_teams()
+                elif plat == "moodle":
+                    self._handle_logout_moodle()
+                elif plat == "untis":
+                    self._handle_logout_untis()
+            else:
+                is_enabled = is_platform_enabled(plat)
+                enabled = load_enabled_platforms()
+                enabled[plat] = not is_enabled
+                save_enabled_platforms(enabled)
+                self._refresh_row_status(plat)
+        elif bid == "btn_login_teams":
             self.dismiss("teams")
         elif bid == "btn_login_moodle":
             self.dismiss("moodle")
@@ -4812,17 +4972,52 @@ class LoginChoiceModal(ModalScreen[Optional[str]]):
         elif bid == "btn_login_cancel":
             self.dismiss(None)
 
+    def _handle_logout_teams(self) -> None:
+        from auth import logout_teams
+        mgr = getattr(self.app, "mgr", None)
+        ok, msg = logout_teams(mgr)
+        if hasattr(self.app, "notify"):
+            self.app.notify(msg, title="Logged Out", severity="information")
+        self._refresh_row_status("teams")
+        if hasattr(self.app, "refresh_table"):
+            self.app.refresh_table()
+
+    def _handle_logout_moodle(self) -> None:
+        from auth import logout_moodle
+        mgr = getattr(self.app, "mgr", None)
+        ok, msg = logout_moodle(mgr)
+        if hasattr(self.app, "notify"):
+            self.app.notify(msg, title="Logged Out", severity="information")
+        self._refresh_row_status("moodle")
+        if hasattr(self.app, "refresh_table"):
+            self.app.refresh_table()
+
+    def _handle_logout_untis(self) -> None:
+        from auth import logout_untis
+        ok, msg = logout_untis()
+        if hasattr(self.app, "notify"):
+            self.app.notify(msg, title="Logged Out", severity="information")
+        self._refresh_row_status("untis")
+
     def action_choose_teams(self) -> None:
-        self.dismiss("teams")
+        from config import is_platform_enabled
+        if is_platform_enabled("teams"):
+            self.dismiss("teams")
 
     def action_choose_moodle(self) -> None:
-        self.dismiss("moodle")
+        from config import is_platform_enabled
+        if is_platform_enabled("moodle"):
+            self.dismiss("moodle")
 
     def action_choose_untis(self) -> None:
-        self.dismiss("untis")
+        from config import is_platform_enabled
+        if is_platform_enabled("untis"):
+            self.dismiss("untis")
 
     def action_choose_git(self) -> None:
-        self.dismiss("git")
+        from config import is_platform_enabled
+        if is_platform_enabled("git"):
+            self.dismiss("git")
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -5081,7 +5276,7 @@ class UntisSetupModal(ModalScreen[bool]):
             yield Label("📅 WebUntis API Connection", id="untis_title")
             yield Label("Sign in with your school account:", id="untis_desc")
             yield Input(placeholder="School name (default: spengergasse)", id="inp_u_school", classes="untis_field")
-            yield Input(placeholder="Username (e.g. end240102)", id="inp_u_user", classes="untis_field")
+            yield Input(placeholder="Username", id="inp_u_user", classes="untis_field")
             yield Input(placeholder="Password", password=True, id="inp_u_pass", classes="untis_field")
             yield Label("", id="untis_status")
             with Horizontal(id="untis_buttons"):
@@ -5640,8 +5835,16 @@ class ExcuseLetterModal(ModalScreen[None]):
         width: 100%;
         align: left middle;
     }
+    #excuse_footer_left {
+        width: 1fr;
+        height: 100%;
+        align: left middle;
+    }
     #excuse_footer_bar Button {
         margin-right: 1;
+    }
+    #btn_el_filter_lateness {
+        margin-right: 0;
     }
     #excuse_count_lbl {
         width: 1fr;
@@ -5658,19 +5861,41 @@ class ExcuseLetterModal(ModalScreen[None]):
         Binding("o", "select_open", "Only Open", show=False),
         Binding("c", "clear_all", "Clear", show=False),
         Binding("p", "generate_pdf", "Generate PDF", show=False),
+        Binding("l", "toggle_lateness", "Hide Lateness", show=False),
         Binding("escape", "cancel", "Back"),
     ]
 
     def __init__(self, summaries: Optional[List[SubjectAbsenceSummary]] = None):
         super().__init__()
         self.summaries = summaries or load_untis_cache()
-        self.daily_absences: List[DailyAbsenceSummary] = get_daily_absence_summaries(self.summaries)
+        self.all_daily_absences: List[DailyAbsenceSummary] = get_daily_absence_summaries(self.summaries)
+        self.hide_lateness: bool = True
         self.profile = load_excuse_profile()
-        open_dates = {d.date for d in self.daily_absences if any(w in d.status.lower() for w in ["offen", "open"])}
+        open_dates = {d.date for d in self.visible_absences if any(w in d.status.lower() for w in ["offen", "open"])}
         if open_dates:
             self.selected_dates: Set[str] = set(open_dates)
         else:
-            self.selected_dates = {d.date for d in self.daily_absences}
+            self.selected_dates = {d.date for d in self.visible_absences}
+
+    @staticmethod
+    def _get_day_minutes(d: DailyAbsenceSummary) -> int:
+        if d.duration_str and ":" in d.duration_str:
+            try:
+                parts = d.duration_str.split(":")
+                return int(parts[0]) * 60 + int(parts[1])
+            except Exception:
+                return d.school_hours * 50
+        return d.school_hours * 50
+
+    @property
+    def visible_absences(self) -> List[DailyAbsenceSummary]:
+        if self.hide_lateness:
+            return [d for d in self.all_daily_absences if self._get_day_minutes(d) >= 50]
+        return list(self.all_daily_absences)
+
+    @property
+    def daily_absences(self) -> List[DailyAbsenceSummary]:
+        return self.visible_absences
 
     def compose(self) -> ComposeResult:
         with Vertical(id="excuse_dialog"):
@@ -5689,8 +5914,10 @@ class ExcuseLetterModal(ModalScreen[None]):
             yield DataTable(id="excuse_table", cursor_type="row")
 
             with Horizontal(id="excuse_footer_bar"):
-                yield Button("🖨️ Generate PDF", id="btn_el_generate", variant="success", tooltip="Generate & Open PDF")
-                yield Button("↩️ Back", id="btn_el_back", variant="default", tooltip="Back")
+                with Horizontal(id="excuse_footer_left"):
+                    yield Button("🖨️ Generate PDF", id="btn_el_generate", variant="success", tooltip="Generate & Open PDF")
+                    yield Button("↩️ Back", id="btn_el_back", variant="default", tooltip="Back")
+                yield Button("⏳ Hide Lateness: ON", id="btn_el_filter_lateness", variant="primary", tooltip="Click to show lateness (< 50 min)")
 
     def on_mount(self) -> None:
         self._update_profile_label()
@@ -5714,12 +5941,13 @@ class ExcuseLetterModal(ModalScreen[None]):
         total_sel_hours = 0
         total_sel_mins = 0
 
-        for idx, d in enumerate(self.daily_absences, 1):
+        for idx, d in enumerate(self.visible_absences, 1):
             is_sel = d.date in self.selected_dates
             sel_badge = Text("[X]", style="bold green") if is_sel else Text("[ ]", style="dim")
             if is_sel:
                 total_sel_hours += d.school_hours
-                total_sel_mins += d.school_hours * 50
+                day_mins = self._get_day_minutes(d)
+                total_sel_mins += day_mins
 
             status_style = "green" if any(w in d.status.lower() for w in ["entschuldigt", "excused"]) else "yellow"
             subjs_str = ", ".join(d.subjects) if d.subjects else "-"
@@ -5736,9 +5964,30 @@ class ExcuseLetterModal(ModalScreen[None]):
                 key=d.date,
             )
 
-        day_str = "day" if len(self.selected_dates) == 1 else "days"
+        sel_visible_count = len([d for d in self.visible_absences if d.date in self.selected_dates])
+        day_str = "day" if sel_visible_count == 1 else "days"
+        dur_h = total_sel_mins // 60
+        dur_m = total_sel_mins % 60
+        dur_str = f"{dur_h}:{dur_m:02d}"
         cnt_lbl = self.query_one("#excuse_count_lbl", Label)
-        cnt_lbl.update(f"Selected: [bold green]{len(self.selected_dates)} {day_str}[/]")
+        cnt_lbl.update(f"Selected: [bold green]{sel_visible_count} {day_str}[/] ({total_sel_hours} periods | {dur_str})")
+
+        try:
+            btn_lat = self.query_one("#btn_el_filter_lateness", Button)
+            if self.hide_lateness:
+                btn_lat.label = "⏳ Hide Lateness: ON"
+                btn_lat.variant = "primary"
+                btn_lat.tooltip = "Click to show lateness (< 50 min)"
+            else:
+                btn_lat.label = "⏳ Hide Lateness: OFF"
+                btn_lat.variant = "default"
+                btn_lat.tooltip = "Click to hide lateness (< 50 min)"
+        except Exception:
+            pass
+
+    def action_toggle_lateness(self) -> None:
+        self.hide_lateness = not self.hide_lateness
+        self.refresh_table()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.row_key:
@@ -5754,16 +6003,16 @@ class ExcuseLetterModal(ModalScreen[None]):
 
     def action_toggle_selected_row(self) -> None:
         dt = self.query_one("#excuse_table", DataTable)
-        if dt.cursor_row is not None and 0 <= dt.cursor_row < len(self.daily_absences):
-            day = self.daily_absences[dt.cursor_row]
+        if dt.cursor_row is not None and 0 <= dt.cursor_row < len(self.visible_absences):
+            day = self.visible_absences[dt.cursor_row]
             self._toggle_date(day.date)
 
     def action_select_all(self) -> None:
-        self.selected_dates = {d.date for d in self.daily_absences}
+        self.selected_dates = {d.date for d in self.visible_absences}
         self.refresh_table()
 
     def action_select_open(self) -> None:
-        self.selected_dates = {d.date for d in self.daily_absences if any(w in d.status.lower() for w in ["offen", "open"])}
+        self.selected_dates = {d.date for d in self.visible_absences if any(w in d.status.lower() for w in ["offen", "open"])}
         self.refresh_table()
 
     def action_clear_all(self) -> None:
@@ -5778,6 +6027,8 @@ class ExcuseLetterModal(ModalScreen[None]):
             self.action_select_open()
         elif bid == "btn_el_clear":
             self.action_clear_all()
+        elif bid == "btn_el_filter_lateness":
+            self.action_toggle_lateness()
         elif bid == "btn_el_profile":
             self.app.push_screen(ExcuseProfileModal(), self._on_profile_updated)
         elif bid == "btn_el_generate":
@@ -7610,7 +7861,8 @@ class AufgabenDetectorApp(App):
             # 1. Wenn Git-Cloud-Sync eingerichtet ist: Remote-Pull & Smart-Merge ausführen
             try:
                 from git_sync_service import is_git_configured, GitSyncService
-                if is_git_configured():
+                from config import is_platform_enabled
+                if is_platform_enabled("git") and is_git_configured():
                     git_ok, git_msg, has_updates = GitSyncService.pull_and_sync()
                     if has_updates:
                         self.mgr.reload_custom_tasks()
@@ -7649,10 +7901,31 @@ class AufgabenDetectorApp(App):
                 except Exception:
                     pass
                 self.refresh_table()
+                if not getattr(self, "is_headless", False):
+                    self._check_login_status_after_sync()
 
             self.call_from_thread(update_ui)
 
         threading.Thread(target=sync_worker, daemon=True, name="SyncWorker").start()
+
+    def _check_login_status_after_sync(self) -> None:
+        """Checks if school platforms are logged in after sync and shows LoginReminderModal if on main screen."""
+        try:
+            from auth import has_missing_logins
+            if not has_missing_logins():
+                return
+
+            # Nur einblenden, wenn der Nutzer sich auf dem Hauptbildschirm befindet
+            if len(self.screen_stack) > 1 or isinstance(self.screen, ModalScreen):
+                return
+
+            def on_reminder_closed(action: Optional[str]) -> None:
+                if action == "open_logins":
+                    self.action_login_menu()
+
+            self.push_screen(LoginReminderModal(), on_reminder_closed)
+        except Exception:
+            pass
 
     def action_login_menu(self, from_menu: bool = False) -> None:
         def on_choice(choice: Optional[str]) -> None:

@@ -11,7 +11,29 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import src
 
-from auth import AuthResult, clean_school_username, login_moodle_http, login_moodle_direct
+from auth import (
+    AuthResult,
+    clean_school_username,
+    login_moodle_http,
+    login_moodle_direct,
+    _humanize_request_error,
+    _is_network_connectivity_error,
+    get_platform_login_status,
+    has_missing_logins,
+    is_moodle_logged_in,
+    is_teams_logged_in,
+    is_untis_logged_in,
+    logout_moodle,
+    logout_teams,
+    logout_untis,
+    logout_git,
+    is_git_logged_in,
+)
+from config import (
+    load_enabled_platforms,
+    save_enabled_platforms,
+    is_platform_enabled,
+)
 from untis_service import (
     clean_school_identifier,
     resolve_webuntis_server,
@@ -169,6 +191,165 @@ class TestAuthLogins(unittest.TestCase):
         res_fail = login_untis_direct("end240102", "wrong_pass", school="spengergasse")
         self.assertFalse(res_fail.success)
         self.assertEqual(res_fail.message, "WebUntis API: bad credentials")
+
+    @patch("requests.Session")
+    def test_login_moodle_http_connection_refused(self, mock_session_cls):
+        import requests
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
+        mock_session.get.side_effect = requests.exceptions.ConnectionError(
+            "HTTPSConnectionPool(host='moodle.spengergasse.at', port=443): Max retries exceeded with url: /login/index.php "
+            "(Caused by NewConnectionError('<urllib3.connection.HTTPSConnection object>: Failed to establish a new connection: "
+            "[WinError 10061] Es konnte keine Verbindung hergestellt werden, da der Zielcomputer die Verbindung verweigerte'))"
+        )
+
+        res = login_moodle_http("end240102", "secret")
+        self.assertFalse(res.success)
+        self.assertEqual(res.message, "Connection refused: Moodle server is offline or requires school VPN.")
+
+    @patch("requests.Session")
+    def test_login_moodle_http_timeout(self, mock_session_cls):
+        import requests
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
+        mock_session.get.side_effect = requests.exceptions.Timeout("Read timed out")
+
+        res = login_moodle_http("end240102", "secret")
+        self.assertFalse(res.success)
+        self.assertEqual(res.message, "Connection timeout: Moodle server is not responding.")
+
+    @patch("requests.Session")
+    def test_login_moodle_http_dns_failure(self, mock_session_cls):
+        import requests
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
+        mock_session.get.side_effect = requests.exceptions.ConnectionError(
+            "Failed to resolve 'moodle.spengergasse.at' ([Errno 11001] getaddrinfo failed)"
+        )
+
+        res = login_moodle_http("end240102", "secret")
+        self.assertFalse(res.success)
+        self.assertEqual(res.message, "Moodle server not found: Check URL or internet connection.")
+
+    @patch("auth.login_moodle_http")
+    @patch("playwright.sync_api.sync_playwright", create=True)
+    def test_login_moodle_direct_skips_playwright_on_connection_error(self, mock_pw, mock_http):
+        mock_http.return_value = AuthResult(False, "Connection refused: Moodle server is offline or requires school VPN.")
+
+        res = login_moodle_direct("end240102", "secret")
+        self.assertFalse(res.success)
+        self.assertEqual(res.message, "Connection refused: Moodle server is offline or requires school VPN.")
+        mock_pw.assert_not_called()
+
+    def test_humanize_request_error_edge_cases(self):
+        import requests
+        # SSL
+        err_ssl = requests.exceptions.SSLError("SSL: CERTIFICATE_VERIFY_FAILED")
+        self.assertIn("SSL certificate verification failed", _humanize_request_error(err_ssl, "Moodle"))
+
+        # Generic ConnectionError
+        err_conn = requests.exceptions.ConnectionError("Remote end closed connection without response")
+        self.assertIn("Could not connect to Moodle server", _humanize_request_error(err_conn, "Moodle"))
+
+        # Connectivity check helper
+        self.assertTrue(_is_network_connectivity_error("Connection refused: Moodle server is offline or requires school VPN."))
+        self.assertTrue(_is_network_connectivity_error("Connection timeout: Moodle server is not responding."))
+        self.assertFalse(_is_network_connectivity_error("Ungültige Anmeldedaten."))
+        self.assertFalse(_is_network_connectivity_error("Invalid credentials."))
+
+    @patch("auth.is_moodle_logged_in")
+    @patch("auth.is_teams_logged_in")
+    @patch("auth.is_untis_logged_in")
+    def test_platform_login_status_and_missing_logins(self, mock_untis, mock_teams, mock_moodle):
+        # Case 1: All logged in
+        mock_moodle.return_value = True
+        mock_teams.return_value = True
+        mock_untis.return_value = True
+        status = get_platform_login_status()
+        self.assertEqual(status, {"moodle": True, "teams": True, "untis": True})
+        self.assertFalse(has_missing_logins())
+
+        # Case 2: Teams missing
+        mock_teams.return_value = False
+        status = get_platform_login_status()
+        self.assertEqual(status, {"moodle": True, "teams": False, "untis": True})
+        self.assertTrue(has_missing_logins())
+
+        # Case 3: All missing
+        mock_moodle.return_value = False
+        mock_untis.return_value = False
+        status = get_platform_login_status()
+        self.assertEqual(status, {"moodle": False, "teams": False, "untis": False})
+        self.assertTrue(has_missing_logins())
+
+    @patch("auth.is_moodle_logged_in")
+    @patch("auth.is_teams_logged_in")
+    @patch("auth.is_untis_logged_in")
+    @patch("auth.is_platform_enabled")
+    def test_has_missing_logins_with_disabled_platform(self, mock_enabled, mock_untis, mock_teams, mock_moodle):
+        mock_moodle.return_value = True
+        mock_teams.return_value = True
+        mock_untis.return_value = False  # Untis not logged in
+
+        # If Untis is enabled, missing logins is True
+        mock_enabled.side_effect = lambda p: True
+        self.assertTrue(has_missing_logins())
+
+        # If Untis is disabled, missing logins should be False!
+        mock_enabled.side_effect = lambda p: False if p == "untis" else True
+        self.assertFalse(has_missing_logins())
+
+    @patch("os.path.exists")
+    @patch("os.remove")
+    def test_logout_moodle(self, mock_remove, mock_exists):
+        mock_exists.return_value = True
+        mock_task_mgr = MagicMock()
+
+        ok, msg = logout_moodle(mock_task_mgr)
+        self.assertTrue(ok)
+        self.assertIn("Moodle logged out", msg)
+        mock_task_mgr.clear_platform_tasks.assert_called_once_with("moodle")
+        self.assertTrue(mock_remove.called)
+
+    @patch("os.path.exists")
+    @patch("os.remove")
+    @patch("shutil.rmtree")
+    def test_logout_teams(self, mock_rmtree, mock_remove, mock_exists):
+        mock_exists.return_value = True
+        mock_task_mgr = MagicMock()
+
+        ok, msg = logout_teams(mock_task_mgr)
+        self.assertTrue(ok)
+        self.assertIn("Microsoft Teams logged out", msg)
+        mock_task_mgr.clear_platform_tasks.assert_called_once_with("teams")
+        self.assertTrue(mock_remove.called)
+        self.assertTrue(mock_rmtree.called)
+
+    @patch("builtins.open")
+    @patch("os.makedirs")
+    @patch("os.path.exists")
+    @patch("os.remove")
+    @patch("shutil.rmtree")
+    def test_logout_untis(self, mock_rmtree, mock_remove, mock_exists, mock_makedirs, mock_open):
+        mock_exists.return_value = True
+        ok, msg = logout_untis()
+        self.assertTrue(ok)
+        self.assertIn("WebUntis logged out", msg)
+        self.assertTrue(mock_rmtree.called)
+
+    @patch("git_sync_service.GitSyncService.disconnect")
+    def test_logout_git(self, mock_disconnect):
+        mock_disconnect.return_value = (True, "Git disconnected")
+        ok, msg = logout_git()
+        self.assertTrue(ok)
+        self.assertEqual(msg, "Git disconnected")
+
+    def test_config_enabled_platforms(self):
+        with patch("builtins.open"), patch("os.path.exists", return_value=True), patch("json.load", return_value={"enabled_platforms": {"moodle": True, "untis": False}}):
+            platforms = load_enabled_platforms()
+            self.assertTrue(platforms.get("moodle"))
+            self.assertFalse(platforms.get("untis"))
+            self.assertTrue(platforms.get("teams"))  # Default fallback
 
 
 if __name__ == "__main__":
