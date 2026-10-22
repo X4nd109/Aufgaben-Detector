@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6.svg)](https://microsoft.com/windows)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
-[![Tests: 179 passing](https://img.shields.io/badge/Tests-179%20passing-brightgreen.svg)](tests/)
+[![Tests: 317 passing](https://img.shields.io/badge/Tests-317%20passing-brightgreen.svg)](tests/)
 
 Modern terminal workspace (Interactive TUI & Headless CLI) consolidating all school assignments from **Moodle** and **Microsoft Teams**, timetable absences and exam schedules from **WebUntis**, as well as schoolbooks and **Digi4School** in one unified view.
 
@@ -26,35 +26,40 @@ Modern terminal workspace (Interactive TUI & Headless CLI) consolidating all sch
    - Automatically opens the target folder in Windows File Explorer upon completion.
    - 1-Click navigation directly to the official Moodle or Teams submission portal in your browser (`[O]`).
 
-3. **WebUntis Absence Tracking & Timetable Reconciliation:**
+3. **AI Explain & Agentic Coding Workflows (`Ai Explain` & `Agent`):**
+   - **🤖 Ai Explain (`[A]`):** Generates a structured, rich prompt containing all assignment metadata, description, due date, teacher, and an enumeration of all attachments. Automatically copies the prompt to your Windows clipboard (`pyperclip` with native Win32 fallback) and launches your chosen AI provider (Google Gemini, ChatGPT, Perplexity, custom URL, or a local desktop `.exe` app like Gemini Desktop or ChatGPT Desktop).
+   - **🤖 Agent Workspace Export (`[G]`):** 1-Click project preparation for agentic coding tools (Google Antigravity, Cursor, VS Code, etc.). Downloads all task attachments and a rendered `angabe.md` into a selected folder, copies the project path to your clipboard, and launches the coding tool as an independent background process.
+   - **AI Configuration Hub (`Settings` -> `[7]` / `[A]`):** Central configuration modal to set prompt language (English / German), manage provider presets, and configure desktop app paths via native Windows file dialogs.
+
+4. **WebUntis Absence Tracking & Timetable Reconciliation:**
    - Split absence view accessible via `[U]` or by clicking `[📅 Absences]`.
    - Reconciles raw absence intervals with the exact timetable of the respective day.
    - Handles split workshop/lab classes (e.g. `1x` vs `1y`) as well as cancelled lessons (*Entfall*) and substitutions.
    - **Automated Excuse Generator:** Generates official PDF excuse letters for school submission (HTL Spengergasse).
 
-4. **WebUntis Exam & Test Planner:**
+5. **WebUntis Exam & Test Planner:**
    - Dedicated exam overview via `[E]` showing date, subject, period, exam type, and classroom.
    - Live countdown timer for upcoming exams and major tests.
    - Record custom preparation notes and revision topics stored locally.
 
-5. **Quick-Jump & Schoolbooks Palette (`Backspace` / `/`):**
+6. **Quick-Jump & Schoolbooks Palette (`Backspace` / `/`):**
    - CommandPalette for instant opening of Moodle course pages in your browser.
    - **Schoolbooks Tab:** Press `Tab` to switch seamlessly between *Courses* and *Schoolbooks*.
    - Link local PDF textbooks (`/link`) or online digital books (`/url`).
    - 1-Click opening in your OS default PDF viewer or browser.
 
-6. **Digi4School Book Grabber (`/download`):**
+7. **Digi4School Book Grabber (`/download`):**
    - Built-in Digi4School book grabber integrated directly into the search palette.
    - Quick download via access code: `/download <access_code>` (or through the interactive `/` command menu).
    - Downloads all high-resolution pages and compiles a fully searchable **OCR sandwich PDF** with table of contents (bookmarks), clickable hyperlinks, and synchronized page numbering.
    - Saved directly to your Windows Downloads folder with a 1-click button to reveal the file.
 
-7. **Headless Agent CLI (`tasks`):**
+8. **Headless Agent CLI (`tasks`):**
    - Token-efficient CLI dispatcher designed for AI coding agents (Antigravity), terminal enthusiasts, and automated scripts.
    - Subcommands include `tasks list`, `tasks show <id>`, `tasks download <id>`, `tasks books`, `tasks sync`, and `tasks open <subject>`.
    - `--json` flag for machine-readable integrations.
 
-8. **Zero-Knowledge & Local-First Security:**
+9. **Zero-Knowledge & Local-First Security:**
    - All credentials, session tokens, browser cookies, and caches remain strictly on your local machine.
    - No plaintext passwords, no telemetry, no cloud dependency.
    - Fully open source under the **MIT License**.
@@ -153,6 +158,8 @@ Customize profile details for the excuse generator and WebUntis in `config.json`
 | `E` | Toggle task completion status (Done / Open) |
 | `L` | Hide assignment / move to Trash |
 | `W` | Restore deleted assignment |
+| `A` | 🤖 Ai Explain (generate prompt, copy to clipboard & open AI tool) |
+| `G` | 🤖 Agent (download task files & launch coding tool workspace) |
 | `Esc` / `Z` | Close details modal |
 
 ### Schoolbooks Palette Commands (`Backspace` -> `Tab`)
@@ -178,6 +185,14 @@ tasks list --json
 # View assignment details
 tasks show 1
 tasks show <task_id> --json
+
+# Generate AI explanation prompt
+tasks explain 1
+tasks explain <task_id> --lang en --copy-only
+
+# Setup task workspace & launch agent coding tool
+tasks agent 1
+tasks agent <task_id> --dir "C:\Projects\SWP_Task"
 
 # Download attachments & problem statement
 tasks download 1
@@ -231,6 +246,8 @@ Aufgaben-Detector/
 │   │   ├── models.py           # Data models (Task, UntisExam, Lesson)
 │   │   └── task_manager.py     # Aggregation, sorting & caching
 │   ├── services/               # Platform adapters & generators
+│   │   ├── ai_agent_service.py # Workspace exporter & coding tool launcher
+│   │   ├── ai_explain_service.py # AI prompt generator & provider dispatcher
 │   │   ├── digi4school_service.py # Digi4School grabber & OCR engine
 │   │   ├── excuse_service.py   # PDF excuse letter generator
 │   │   ├── git_sync_service.py # Git cloud synchronization
@@ -241,7 +258,7 @@ Aufgaben-Detector/
 │   └── ui/                     # Terminal User Interface (Textual)
 │       ├── tui_app.py          # Interactive TUI (screens, modals, palettes)
 │       └── ui.py               # Rich terminal formatting helpers
-├── tests/                      # Automated unit & integration test suite (179 tests)
+├── tests/                      # Automated unit & integration test suite (317 tests)
 ├── AGENTS.md                   # Lean master index (< 3 KB) for Antigravity agents
 ├── config.example.json         # Example user configuration template
 ├── LICENSE                     # MIT License
