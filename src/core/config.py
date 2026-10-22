@@ -18,7 +18,7 @@ WORKSPACE_DIR = os.path.dirname(SRC_DIR)
 USERPROFILE = os.environ.get("USERPROFILE") or os.path.expanduser("~")
 
 # Anwendungs-Version & GitHub Repository
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 GITHUB_REPO = "X4nd109/Aufgaben-Detector"
 
 
@@ -1277,3 +1277,125 @@ def is_platform_enabled(platform: str) -> bool:
     """Gibt zurück, ob eine Plattform aktiv geschaltet ist."""
     key = platform.strip().lower()
     return load_enabled_platforms().get(key, True)
+
+
+# AI Explain Konfiguration & Presets
+AI_EXPLAIN_PRESETS = {
+    "gemini": {
+        "name": "Google Gemini",
+        "url_template": "https://gemini.google.com/app",
+    },
+    "chatgpt": {
+        "name": "ChatGPT",
+        "url_template": "https://chatgpt.com/?q={prompt}",
+    },
+    "perplexity": {
+        "name": "Perplexity AI",
+        "url_template": "https://www.perplexity.ai/search?q={prompt}",
+    },
+    "custom": {
+        "name": "Custom URL",
+        "url_template": "https://gemini.google.com/app",
+    },
+    "app": {
+        "name": "Desktop App (.exe)",
+        "url_template": "",
+    },
+}
+
+DEFAULT_AI_EXPLAIN_CONFIG = {
+    "provider": "gemini",
+    "url_template": "https://gemini.google.com/app",
+    "app_path": None,
+    "language": "de",
+}
+
+
+def load_ai_explain_config() -> dict:
+    """Lädt die Konfiguration für das AI-Explain Feature aus config.json."""
+    for path in [CONFIG_FILE, APP_CONFIG_FILE]:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict) and "ai_explain_config" in data:
+                        raw = data["ai_explain_config"]
+                        if isinstance(raw, dict):
+                            res = dict(DEFAULT_AI_EXPLAIN_CONFIG)
+                            if "provider" in raw and str(raw["provider"]).lower() in AI_EXPLAIN_PRESETS:
+                                res["provider"] = str(raw["provider"]).lower()
+                            if "url_template" in raw and isinstance(raw["url_template"], str) and raw["url_template"].strip():
+                                res["url_template"] = raw["url_template"].strip()
+                            if "app_path" in raw:
+                                res["app_path"] = str(raw["app_path"]).strip() if raw["app_path"] else None
+                            if "language" in raw and str(raw["language"]).lower() in ["de", "en"]:
+                                res["language"] = str(raw["language"]).lower()
+                            return res
+            except Exception:
+                pass
+    return dict(DEFAULT_AI_EXPLAIN_CONFIG)
+
+
+def save_ai_explain_config(cfg: dict, auto_push: bool = True) -> None:
+    """Speichert die AI-Explain-Einstellungen persistent."""
+    if not isinstance(cfg, dict):
+        return
+    current = load_ai_explain_config()
+    if "provider" in cfg and str(cfg["provider"]).lower() in AI_EXPLAIN_PRESETS:
+        current["provider"] = str(cfg["provider"]).lower()
+    if "url_template" in cfg and isinstance(cfg["url_template"], str) and cfg["url_template"].strip():
+        current["url_template"] = cfg["url_template"].strip()
+    if "app_path" in cfg:
+        val = cfg["app_path"]
+        current["app_path"] = val.strip() if isinstance(val, str) and val.strip() else None
+    if "language" in cfg and str(cfg["language"]).lower() in ["de", "en"]:
+        current["language"] = str(cfg["language"]).lower()
+
+    for path in [CONFIG_FILE, APP_CONFIG_FILE]:
+        try:
+            data = {}
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f) or {}
+            data["ai_explain_config"] = current
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Warning: Could not save ai_explain_config to {path}: {e}", file=sys.stderr)
+
+
+def load_agent_coding_tool() -> Optional[str]:
+    """Lädt den Pfad zum konfigurierten Agentic Coding Tool (.exe) aus config.json."""
+    for path in [CONFIG_FILE, APP_CONFIG_FILE]:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict) and "agent_coding_tool_path" in data:
+                        val = data["agent_coding_tool_path"]
+                        if isinstance(val, str) and val.strip():
+                            return val.strip()
+            except Exception:
+                pass
+    return None
+
+
+def save_agent_coding_tool(exe_path: Optional[str], auto_push: bool = True) -> None:
+    """Speichert den Pfad zur Executable des Agentic Coding Tools persistent."""
+    clean_path = exe_path.strip() if isinstance(exe_path, str) and exe_path.strip() else None
+
+    for path in [CONFIG_FILE, APP_CONFIG_FILE]:
+        try:
+            data = {}
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f) or {}
+            data["agent_coding_tool_path"] = clean_path
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Warning: Could not save agent_coding_tool_path to {path}: {e}", file=sys.stderr)
+
+

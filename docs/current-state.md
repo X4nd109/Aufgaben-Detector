@@ -1,11 +1,70 @@
 # Current Project State & Session Handoff — Aufgaben-Detector
 
-> **Last Updated**: 2026-10-21  
-> **Active Milestone**: Milestone 3 — In-App Auto-Update, Sync Performance & UI Polish (v1.1.0)
+> **Last Updated**: 2026-10-22  
+> **Active Milestone**: Milestone 4 — AI Explain, Agentic Coding Tool Integration & Desktop App Linking (v1.2.0)
 
 ---
 
 ## 1. Completed Tasks & Milestones
+
+- [x] **Release v1.2.0 — AI Explain, Agentic Coding Tool Integration & Desktop App Linking**:
+  - **'Ai Explain' Button & Workflows (`TaskDetailModal`, `AiExplainModal`, `open_ai_explain`)**:
+    - Strukturierte Prompts auf Deutsch oder Englisch mit allen Aufgabenmetadaten und Dateianhängen.
+    - Automatisches Multi-Level Kopieren in die Windows-Zwischenablage (`pyperclip` + `ctypes` Fallback).
+    - Browser-Link mit dynamischer Query-Param-Ersetzung (`{prompt}`) oder direktem Einfügen.
+    - Vordefiniertes Preset `Desktop App` zum Starten lokaler KI-Anwendungen (`.exe`) via nativem Windows Dateidialog (`pick_file`).
+    - Scrollbarer Dialog (`VerticalScroll`) mit `scrollbar-gutter: stable` und `max-height: 85%` gegen Button-Clipping.
+    - Vollständige englische Lokalisierung der Benutzeroberfläche und Einstellungsdialoge.
+  - **'Agent' Button & Agentic Coding Tool Workflow (`TaskDetailModal`, `AiAgentConfigModal`)**:
+    - 1-Klick-Workflow lädt Aufgaben-Dateien & `angabe.md` in frei wählbaren Ordner via Windows Folder Picker herunter.
+    - Kopiert automatisch den absoluten Projektpfad in die Windows-Zwischenablage (`Strg+V` im Coding Tool).
+    - Startet das konfigurierte Agentic Coding Tool (Antigravity, Cursor, VS Code etc.) als unabhängigen Hintergrundprozess.
+  - **Zentralisiertes 'AI Configuration' Einstellungsmenü (`AiConfigChoiceModal` & `AiAgentConfigModal`)**:
+    - Zusammenfassung von AI Explain und AI Agent unter `🤖 AI Configuration` (Shortcut `[7]` / `[A]`).
+    - Modale Verwaltung der Executable mit Explorer-Auswahl und Zurücksetzen-Funktion.
+  - **Headless Agent CLI Subcommands (`tasks explain`, `tasks agent`)**:
+    - Direkte Terminal- und JSON-Schnittstelle für autonome Agenten und Skripte.
+  - 23 neue automatisierte Unit-Tests (Gesamtsuite: 317 Tests, 100 % Erfolgsquote).
+
+- [x] **Feature: 'Agent' Button & 'AI Configuration' Hub (TUI & Headless CLI)**:
+  - **Interaktiver 'Agent'-Button (`TaskDetailModal`)**:
+    - Neuer Button `#btn_det_agent` (`🤖 Agent [G]`) in der Aufgaben-Detailansicht mit Shortcut `[G]`.
+    - Öffnet den Windows-Folder-Picker (`pick_directory`), sodass der Benutzer sein gewünschtes Projektverzeichnis frei wählen kann.
+    - Lädt alle Anhänge und die formatierte Aufgabenstellung (`angabe.md`) direkt in den Zielordner herunter.
+    - Kopiert automatisch den absoluten Projektpfad in die Windows-Zwischenablage (`Strg+V` im Coding Tool).
+    - Startet das konfigurierte Agentic Coding Tool als eigenständigen Hintergrundprozess (ohne erzwungene Projekt-Neuerstellung).
+    - Falls kein Tool hinterlegt ist, erscheint eine In-App Notification mit Hinweis auf die Settings.
+  - **Zentrales Einstellungs-Hub `AI Configuration` (`SettingsModal`, `AiConfigChoiceModal`, `AiAgentConfigModal`)**:
+    - Zusammenführung von 'AI Explain' und 'AI Agent' unter `🤖 AI Configuration` (Shortcut `[7]` / `[A]`).
+    - `AiConfigChoiceModal`: Übersichtliches Menü zur Verzweigung in Explain- oder Agent-Einstellungen.
+    - `AiAgentConfigModal`: Anzeige der konfigurierten Tool-Executable, Durchsuchen per Windows Datei-Explorer (`pick_file`) und Reset-Funktion.
+    - Persistente Speicherung in `config.json` unter `agent_coding_tool_path`.
+  - **Headless Agent CLI (`tasks agent`)**:
+    - `tasks agent <id|index> [--dir <pfad>] [--no-launch] [--json]`.
+  - 9 neue automatisierte Unit-Tests in `tests/test_agent_feature.py` (Gesamtsuite: 315 bestandene Tests mit 100 % Erfolgsquote).
+
+- [x] **Feature: 'Ai Explain' Integration (TUI & Headless CLI)**:
+  - **Interaktiver Button in der Detailansicht (`TaskDetailModal`)**:
+    - Neuer Button `#btn_det_ai_explain` (`🤖 Ai Explain [A]`) neben Download [D] / Mark as Open [E].
+    - Shortcut `[A]` löst die Erklärung direkt per Tastatur aus.
+    - Funktioniert nahtlos für alle Aufgabenarten (Moodle, Teams und manuell erstellte Aufgaben).
+  - **Automatischer KI-Prompt mit Metadaten & Dateiliste (`build_ai_explain_prompt`)**:
+    - Strukturierter Aufbau mit Aufgabenstellung, Fach, Titel, Fälligkeit, Lehrkraft, Beschreibung und Angabe-Details.
+    - Listet alle dazugehörigen Dateianhänge auf, damit die KI über alle Aufgabendokumente im Bilde ist.
+    - Umschaltbar auf Deutsch ("Erkläre mir folgende Schulaufgabe...") oder Englisch ("Please explain the following school assignment...").
+  - **Multi-Level Clipboard-Integration (`copy_to_clipboard`)**:
+    - Legt den generierten Prompt sofort in die Windows-Zwischenablage (pyperclip mit ctypes user32/kernel32 und clip.exe Fallback).
+  - **Browser-Integration & URL-Templates (`open_ai_explain`)**:
+    - Unterstützt direkte Query-Param-Übergabe via `{prompt}` (z. B. ChatGPT oder Perplexity).
+    - Unterstützt Direktlinks (z. B. Google Gemini, wo einfaches `Strg+V` im geöffneten Chatfenster genügt).
+  - **Konfigurations-Modal in den Einstellungen (`AiExplainModal` / `SettingsModal`)**:
+    - Neuer Menüpunkt `#btn_set_ai_explain` (`🤖 AI Explain Config [6]`).
+    - Schnellauswahl vorkonfigurierter Provider (Google Gemini, ChatGPT, Perplexity, Eigene URL).
+    - 1-Klick Umschaltung der Prompt-Sprache (Deutsch / Englisch).
+    - Persistente Speicherung in `config.json` unter `ai_explain_config`.
+  - **Headless Agent CLI (`tasks explain`)**:
+    - `tasks explain <id|index> [--lang de|en] [--copy-only] [--no-browser] [--json]`.
+  - 11 neue automatisierte Unit-Tests in `tests/test_ai_explain.py` (Gesamtsuite: 306 bestandene Tests).
 
 - [x] **Release v1.1.0 — WebUntis Lateness & Excuse Letter Polish, Login Reminder & Platform Toggle**:
   - **Minutengenaue Verspätungs- & Fehlzeitenberechnung**:
@@ -221,35 +280,30 @@
 
 ## 3. Known Issues & Blockers
 
-- *None active* (All 267 test suite tests passing cleanly with 100% pass rate).
+- *None active* (All 317 test suite tests passing cleanly with 100% pass rate).
 
 ---
 
 ## 4. Session Handoff Notes (Context for Next Agent)
 
-- **Recent Achievements (2026-10-21 — In-Terminal Update-Workflow, Getting-Started Polish & Sync Performance v1.0.10)**:
-  - Automatisches Wiederherstellen der Welcome-Aufgabe bei jedem Versionsupdate (`_check_and_apply_version_update`), inklusive Ent-Löschung und Status-Reset auf `Open`.
-  - Reine Button-Navigation auf Englisch in der Getting-Started-Aufgabe ohne Tastatur-Hotkeys.
-  - Nahtloser In-Terminal Update-Handoff in `run.bat` ohne separate PowerShell- oder CMD-Fenster.
-  - Entfernung der redundanten Bibliotheksinstallation während des Updates.
-  - 267 Tests in der Gesamtsuite mit 100 % Erfolgsquote.
-  - Tesseract 5 OCR-Tuning: Sauvola-Binarisierung (`thresholding_method=2`), Strichdicken-Normierung (`classify_nonlinear_norm=1`), Unterstreichungstrennung (`textord_restore_underlines=1`) und Unsharp-Masking für 100 % Schärfe bei fettem und unterstrichenem Text.
-  - Vollständiger modalgestützter Downloadflow mit automatischer Buchanalyse (`Digi4SchoolService.inspect_book`).
-  - Kurzer Ladedialog `Digi4SchoolDetectModal` visualisiert die Vorab-Erkennung von Titel und Gesamtzahl der Seiten.
-  - Kompaktes Menü `Digi4SchoolPageRangeModal` mit dem 2-Thumb-Slider `TwoThumbRangeSlider`, Zugangscode, zentriertem *All*-Button und Ziffernfeldern.
-  - Nahtlose Weitergabe an `Digi4SchoolProgressModal` und `Digi4SchoolService.download_book(pages=...)`.
-  - 264 Tests in der Gesamtsuite mit 100 % Erfolgsquote.
-- **Previous Achievements (2026-10-20 — Main Task Dashboard Formatting & Priority Fixes v1.0.9 Polish)**:
-  - Kein Zeilenumbruch der Sync-Uhrzeit mehr: `#info_bar` auf `height: 1` gesperrt, `SyncSpinner` mit fester Boxbreite (`width: 3`) für Null-Layout-Shift.
-  - "Teacher"-Header Truncation ("Teache") durch Anhebung der Spaltenbreite auf min. 8 (bzw. 7) vollständig behoben.
-  - Spaltenpriorisierung implementiert: Due Date (28–32 Chars) und Teacher voll erhalten, Assignment flexibel und absorbiert Größenänderungen.
-  - 4K / 1440p Startup Viewport-Kalibrierung via `_sync_initial_viewport`.
-  - 252 Tests in der Gesamtsuite mit 100 % Erfolgsquote.
-- **Previous Achievements (2026-10-20 — UpdateReminderModal English Localization & 2-Row Button Layout)**:
-  - Vollständige Lokalisierung aller Texte im UpdateReminderModal auf Englisch.
-  - 2-Zeilen-Button-Layout verhindert Abschneiden von Buttons.
-- **Previous Achievements (2026-10-20 — v1.0.7 In-App Auto-Update Feature)**:
-  - 1-Click Auto-Update Flow (`UpdateReminderModal`) mit Chunk-Download, Fortschrittsanzeige und geräuschlosem Inno Setup Handoff.
+- **Recent Achievements (2026-10-22 — Release v1.2.0: AI Explain, AI Agent & AI Configuration Hub)**:
+  - **'Ai Explain' Integration (`TaskDetailModal`, `AiExplainModal`, `open_ai_explain`)**:
+    - Generiert strukturierte Prompts auf Deutsch oder Englisch mit allen Aufgabenmetadaten und Dateianhängen.
+    - Automatisches Kopieren in die Zwischenablage (`pyperclip` + `ctypes` Fallback) und Öffnen im Browser oder Starten einer lokalen Desktop-App (`.exe`).
+    - Vollständige englische Lokalisierung und dynamische Umschaltung zwischen Web-URL und Desktop-App-Pfad.
+    - `VerticalScroll`-Unterstützung mit `scrollbar-gutter: stable` und `max-height: 85%`, wodurch die Buttons `Save [S]` und `Back [ESC]` auch in kompakten Terminals mit sicherem Puffer erreichbar sind.
+  - **'Agent' Button & Agentic Coding Tool Integration (`TaskDetailModal`, `AiAgentConfigModal`, `run_agent_workflow`)**:
+    - 1-Klick-Workflow lädt Aufgaben-Dateien & `angabe.md` herunter, kopiert den Zielordner-Pfad in die Zwischenablage und startet das konfigurierte Coding Tool (Antigravity, Cursor, VS Code etc.).
+    - Native Windows-Explorer-Auswahl für Verzeichnisse (`pick_directory`) und Executables (`pick_file`).
+  - **Zentrales Einstellungs-Hub `AI Configuration` (`SettingsModal`, `AiConfigChoiceModal`)**:
+    - Menüpunkt in den Settings unter Shortcut `[7]` / `[A]`.
+  - **Headless Agent CLI (`tasks explain`, `tasks agent`)**:
+    - Vollständige Befehle für autonome KI-Agenten mit `--json`, `--copy-only`, `--no-launch` etc.
+  - **316 automatisierte Tests** in der Gesamtsuite mit 100 % Erfolgsquote (`tests/test_ai_explain.py`, `tests/test_agent_feature.py`, `tests/test_tui_app.py` etc.).
+- **Previous Achievements (2026-10-21 — Release v1.1.0 & WebUntis Lateness & Excuse Letter Polish)**:
+  - Minutengenaue Verspätungsberechnung und Stundenplan-Abgleich.
+  - Verspätungsfilter `Hide Lateness` im Entschuldigungs-Dialog.
+  - Plattform-Toggle im Login-Menü.
 - **Entry Points**:
   - Desktop / Interactive: `run.bat` oder `python main.py`
   - Agent / Script: `tasks.bat <subcommand>` oder `python main.py <subcommand>`

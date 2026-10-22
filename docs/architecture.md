@@ -29,6 +29,8 @@ graph TD
         Schoolbook[SchoolbookService<br/>schoolbook_service.py]
         Digi4School[Digi4SchoolService<br/>digi4school_service.py]
         Update[UpdateService<br/>update_service.py]
+        AiExplain[AiExplainService<br/>ai_explain_service.py]
+        AiAgent[AiAgentService<br/>ai_agent_service.py]
     end
 
     subgraph Storage Layer [cache/ & data/]
@@ -102,6 +104,8 @@ Aufgaben Detector/
 │   │   ├── task_manager.py     # Central aggregation & caching coordinator
 │   │   └── win_dialogs.py      # Per-Monitor DPI-Awareness v2 & native Windows COM IFileOpenDialog
 │   ├── services/               # External portal integration adapters
+│   │   ├── ai_agent_service.py # Agent project exporter (angabe.md + attachments) & tool launcher
+│   │   ├── ai_explain_service.py # AI prompt generation, clipboard copy & browser / app launcher
 │   │   ├── directory_service.py # Directory linking, listing and Explorer launcher
 │   │   ├── excuse_service.py   # PDF absence excuse generator
 │   │   ├── git_sync_service.py # Multi-device repository sync (including favorites)
@@ -115,6 +119,8 @@ Aufgaben Detector/
 │       ├── tui_app.py          # Interactive Textual TUI
 │       └── ui.py               # Rich terminal rendering utilities
 ├── tests/                      # Automated test suite (pytest / unittest)
+│   ├── test_agent_feature.py   # Unit tests for agent project packaging & tool launcher
+│   ├── test_ai_explain.py      # Unit tests for AI Explain prompt generation & desktop app launcher
 │   ├── test_auth_logins.py     # Unit tests for Moodle HTTP & Untis login & server resolution
 │   ├── test_schoolbooks.py     # Unit tests for schoolbooks & git isolation
 │   ├── test_digi4school.py     # Unit tests for Digi4School downloader & CLI

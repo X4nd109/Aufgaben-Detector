@@ -3554,6 +3554,8 @@ class SettingsModal(ModalScreen[Optional[str]]):
         Binding("5", "choose_hotkeys", "Hotkeys", show=False),
         Binding("6", "choose_hotkeys", "Hotkeys", show=False),
         Binding("h", "choose_hotkeys", "Hotkeys", show=False),
+        Binding("7", "choose_ai_explain", "AI Explain", show=False),
+        Binding("a", "choose_ai_explain", "AI Explain", show=False),
         Binding("escape", "cancel", "Cancel"),
     ]
 
@@ -3566,7 +3568,8 @@ class SettingsModal(ModalScreen[Optional[str]]):
             yield Button("🔑 Login", id="btn_set_login", classes="settings_btn", variant="warning", tooltip="Login [2]")
             yield Button("👁️ Hidden", id="btn_set_hidden", classes="settings_btn", variant="error", tooltip="Hidden [3]")
             yield Button("⚙️ School & Student Config", id="btn_set_school_config", classes="settings_btn", variant="primary", tooltip="School & Student Config [4]")
-            yield Button("⌨️ Hotkeys", id="btn_set_hotkeys", classes="settings_btn", variant="default", tooltip="Hotkeys [5]")
+            yield Button("⌨️ Hotkeys", id="btn_set_hotkeys", classes="settings_btn", variant="default", tooltip="Hotkeys [5/6]")
+            yield Button("🤖 AI Configuration", id="btn_set_ai_config", classes="settings_btn", variant="primary", tooltip="AI Configuration [7/A]")
             with Horizontal(id="settings_cancel_row"):
                 yield Button("↩️ Close [ESC]", id="btn_set_cancel", variant="default")
 
@@ -3582,6 +3585,8 @@ class SettingsModal(ModalScreen[Optional[str]]):
             self.dismiss("school_config")
         elif bid == "btn_set_hotkeys":
             self.dismiss("show_hotkeys")
+        elif bid in ("btn_set_ai_config", "btn_set_ai_explain"):
+            self.dismiss("ai_config_menu")
         elif bid == "btn_set_cancel":
             self.dismiss(None)
 
@@ -3606,11 +3611,499 @@ class SettingsModal(ModalScreen[Optional[str]]):
     def action_choose_hotkeys(self) -> None:
         self.dismiss("show_hotkeys")
 
+    def action_choose_ai_explain(self) -> None:
+        self.dismiss("ai_config_menu")
+
     def action_cancel(self) -> None:
         self.dismiss(None)
 
     def key_escape(self) -> None:
         self.dismiss(None)
+
+
+class AiConfigChoiceModal(ModalScreen[Optional[str]]):
+    """Selection menu for AI configuration (Explain vs. Agent)."""
+
+    DEFAULT_CSS = """
+    AiConfigChoiceModal {
+        align: center middle;
+    }
+    #ai_choice_dialog {
+        width: 62;
+        max-height: 90%;
+        height: auto;
+        border: thick #89b4fa;
+        background: #1e1e2e;
+        padding: 1 2;
+    }
+    #ai_choice_title {
+        width: 100%;
+        text-align: center;
+        text-style: bold;
+        color: #89b4fa;
+        margin-bottom: 1;
+    }
+    .ai_choice_btn {
+        width: 100%;
+        margin-bottom: 1;
+    }
+    #ai_choice_cancel_row {
+        height: auto;
+        align: center middle;
+        margin-top: 1;
+    }
+    """
+
+    BINDINGS = [
+        Binding("1", "choose_explain", "Explain", show=False),
+        Binding("2", "choose_agent", "Agent", show=False),
+        Binding("e", "choose_explain", "Explain", show=False),
+        Binding("a", "choose_agent", "Agent", show=False),
+        Binding("escape", "cancel", "Back"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="ai_choice_dialog"):
+            yield Label("🤖 AI Configuration", id="ai_choice_title")
+            yield Button("💬 AI Explain (Web / Desktop App) [1]", id="btn_choice_explain", classes="ai_choice_btn", variant="primary")
+            yield Button("💻 AI Agent (Coding Tool .exe) [2]", id="btn_choice_agent", classes="ai_choice_btn", variant="warning")
+            with Horizontal(id="ai_choice_cancel_row"):
+                yield Button("↩️ Back [ESC]", id="btn_choice_cancel", variant="default")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        bid = event.button.id
+        if bid == "btn_choice_explain":
+            self.dismiss("explain")
+        elif bid == "btn_choice_agent":
+            self.dismiss("agent")
+        elif bid == "btn_choice_cancel":
+            self.dismiss(None)
+
+    def action_choose_explain(self) -> None:
+        self.dismiss("explain")
+
+    def action_choose_agent(self) -> None:
+        self.dismiss("agent")
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class AiAgentConfigModal(ModalScreen[bool]):
+    """Modal dialog to configure the Agentic Coding Tool (.exe path)."""
+
+    DEFAULT_CSS = """
+    AiAgentConfigModal {
+        align: center middle;
+    }
+    #agent_config_dialog {
+        width: 76;
+        max-height: 85%;
+        height: auto;
+        border: thick #fab387;
+        background: #1e1e2e;
+        padding: 1 2;
+        scrollbar-gutter: stable;
+    }
+    #agent_config_title {
+        width: 100%;
+        text-align: center;
+        text-style: bold;
+        color: #fab387;
+        margin-bottom: 1;
+    }
+    .agent_label {
+        color: #cdd6f4;
+        text-style: bold;
+        margin-top: 1;
+    }
+    .agent_hint {
+        color: #a6adc8;
+        margin-bottom: 1;
+    }
+    #agent_path_display {
+        background: #181825;
+        border: solid #45475a;
+        color: #89dceb;
+        padding: 0 1;
+        height: 3;
+        content-align: left middle;
+        margin-bottom: 1;
+    }
+    #agent_btn_row {
+        height: auto;
+        align: left middle;
+        margin-bottom: 1;
+    }
+    #agent_btn_row Button {
+        margin-right: 1;
+    }
+    #agent_action_buttons {
+        height: auto;
+        align: center middle;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
+    #agent_action_buttons Button {
+        margin: 0 1;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Back"),
+        Binding("s", "save", "Save"),
+    ]
+
+    def __init__(self):
+        super().__init__()
+        from core.config import load_agent_coding_tool
+        self.current_tool_path = load_agent_coding_tool() or ""
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll(id="agent_config_dialog"):
+            yield Label("💻 AI Agent Configuration", id="agent_config_title")
+            yield Label("Agentic Coding Tool Executable:", classes="agent_label")
+            yield Label("Select the .exe of your coding tool (e.g. Antigravity, Cursor, VS Code):", classes="agent_hint")
+
+            path_text = self.current_tool_path if self.current_tool_path else "(No coding tool configured)"
+            yield Static(path_text, id="agent_path_display")
+
+            with Horizontal(id="agent_btn_row"):
+                yield Button("📁 Browse .exe...", id="btn_agent_browse", variant="primary")
+                yield Button("🗑️ Clear", id="btn_agent_clear", variant="error")
+
+            with Horizontal(id="agent_action_buttons"):
+                yield Button("💾 Save [S]", id="btn_agent_save", variant="success")
+                yield Button("↩️ Back [ESC]", id="btn_agent_cancel", variant="default")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        bid = event.button.id
+        if bid == "btn_agent_browse":
+            self.action_browse()
+        elif bid == "btn_agent_clear":
+            self.action_clear()
+        elif bid == "btn_agent_save":
+            self.action_save()
+        elif bid == "btn_agent_cancel":
+            self.action_cancel()
+
+    def action_browse(self) -> None:
+        def browse_worker():
+            from core.win_dialogs import pick_file
+            chosen = pick_file(
+                dialog_title="Select Agentic Coding Tool (.exe)",
+                filter_name="Executable (*.exe)",
+                filter_ext="*.exe"
+            )
+            if chosen and os.path.exists(chosen):
+                def update_path():
+                    self.current_tool_path = chosen
+                    try:
+                        self.query_one("#agent_path_display", Static).update(chosen)
+                    except Exception:
+                        pass
+                self.app.call_from_thread(update_path)
+
+        import threading
+        threading.Thread(target=browse_worker, daemon=True, name="BrowseWorker").start()
+
+    def action_clear(self) -> None:
+        self.current_tool_path = ""
+        try:
+            self.query_one("#agent_path_display", Static).update("(No coding tool configured)")
+        except Exception:
+            pass
+
+    def action_save(self) -> None:
+        from core.config import save_agent_coding_tool
+        save_agent_coding_tool(self.current_tool_path if self.current_tool_path else None)
+        self.app.notify("Agentic Coding Tool saved!", severity="information")
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
+class AiExplainModal(ModalScreen[bool]):
+    """Modal dialog to configure 'Ai Explain' service (provider, URL template, desktop app, language)."""
+
+    DEFAULT_CSS = """
+    AiExplainModal {
+        align: center middle;
+    }
+    #ai_config_dialog {
+        width: 82;
+        max-height: 85%;
+        height: auto;
+        border: thick #a6e3a1;
+        background: #1e1e2e;
+        padding: 1 2;
+        scrollbar-gutter: stable;
+    }
+    #ai_config_title {
+        text-align: center;
+        text-style: bold;
+        color: #a6e3a1;
+        margin-bottom: 1;
+    }
+    .ai_label {
+        color: #cdd6f4;
+        text-style: bold;
+        margin-top: 1;
+        margin-bottom: 0;
+    }
+    .ai_hint {
+        color: #a6adc8;
+        margin-bottom: 1;
+    }
+    #ai_preset_row {
+        height: auto;
+        align: left middle;
+        margin-top: 0;
+        margin-bottom: 1;
+    }
+    #ai_preset_row Button {
+        margin-right: 1;
+        min-width: 12;
+    }
+    #ai_web_section {
+        height: auto;
+        width: 100%;
+    }
+    #inp_ai_url {
+        margin-bottom: 1;
+    }
+    #ai_app_section {
+        height: auto;
+        width: 100%;
+    }
+    #ai_app_path_display {
+        background: #181825;
+        border: solid #45475a;
+        color: #89dceb;
+        padding: 0 1;
+        height: 3;
+        content-align: left middle;
+        margin-bottom: 1;
+    }
+    #ai_app_btn_row {
+        height: auto;
+        align: left middle;
+        margin-bottom: 1;
+    }
+    #ai_app_btn_row Button {
+        margin-right: 1;
+    }
+    #ai_lang_row {
+        height: auto;
+        align: left middle;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
+    #btn_ai_lang {
+        min-width: 32;
+    }
+    #ai_buttons {
+        height: auto;
+        align: center middle;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
+    #ai_buttons Button {
+        margin: 0 1;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Back"),
+        Binding("s", "save", "Save"),
+    ]
+
+    def __init__(self):
+        super().__init__()
+        from core.config import load_ai_explain_config, AI_EXPLAIN_PRESETS
+        self.presets = AI_EXPLAIN_PRESETS
+        self.cfg = load_ai_explain_config()
+        self.current_provider = self.cfg.get("provider", "gemini")
+        self.current_language = self.cfg.get("language", "de")
+        self.current_url = self.cfg.get("url_template", self.presets.get("gemini", {}).get("url_template", ""))
+        self.current_app_path = self.cfg.get("app_path") or ""
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll(id="ai_config_dialog"):
+            yield Label("🤖 AI Explain Configuration", id="ai_config_title")
+
+            yield Label("Mode & Provider Presets:", classes="ai_label")
+            yield Label("Choose a web service preset, custom URL, or a desktop app:", classes="ai_hint")
+            with Horizontal(id="ai_preset_row"):
+                yield Button(
+                    "Google Gemini",
+                    id="btn_ai_preset_gemini",
+                    variant="primary" if self.current_provider == "gemini" else "default",
+                )
+                yield Button(
+                    "ChatGPT",
+                    id="btn_ai_preset_chatgpt",
+                    variant="primary" if self.current_provider == "chatgpt" else "default",
+                )
+                yield Button(
+                    "Perplexity",
+                    id="btn_ai_preset_perplexity",
+                    variant="primary" if self.current_provider == "perplexity" else "default",
+                )
+                yield Button(
+                    "Custom URL",
+                    id="btn_ai_preset_custom",
+                    variant="primary" if self.current_provider == "custom" else "default",
+                )
+                yield Button(
+                    "Desktop App (.exe)",
+                    id="btn_ai_preset_app",
+                    variant="primary" if self.current_provider == "app" else "default",
+                )
+
+            with Vertical(id="ai_web_section"):
+                yield Label("Target URL Template:", classes="ai_label")
+                yield Label("Tip: '{prompt}' is automatically replaced by the URL-encoded prompt.", classes="ai_hint")
+                yield Input(
+                    value=self.current_url,
+                    placeholder="https://gemini.google.com/app",
+                    id="inp_ai_url",
+                )
+
+            with Vertical(id="ai_app_section"):
+                yield Label("Desktop App Executable (.exe):", classes="ai_label")
+                yield Label("Select the .exe of your local AI app (e.g. Gemini Desktop, ChatGPT App):", classes="ai_hint")
+                app_disp = self.current_app_path if self.current_app_path else "(No desktop app configured)"
+                yield Static(app_disp, id="ai_app_path_display")
+                with Horizontal(id="ai_app_btn_row"):
+                    yield Button("📁 Browse .exe...", id="btn_ai_app_browse", variant="primary")
+                    yield Button("🗑️ Clear", id="btn_ai_app_clear", variant="error")
+
+            yield Label("Prompt Language:", classes="ai_label")
+            with Horizontal(id="ai_lang_row"):
+                lang_label = "🌐 Language: German (DE)" if self.current_language == "de" else "🌐 Language: English (EN)"
+                yield Button(lang_label, id="btn_ai_lang", variant="success")
+
+            with Horizontal(id="ai_buttons"):
+                yield Button("💾 Save [S]", id="btn_ai_save", variant="success")
+                yield Button("↩️ Back [ESC]", id="btn_ai_cancel", variant="default")
+
+    def on_mount(self) -> None:
+        self._update_section_visibility()
+
+    def _update_section_visibility(self) -> None:
+        try:
+            web_sec = self.query_one("#ai_web_section", Vertical)
+            app_sec = self.query_one("#ai_app_section", Vertical)
+            if self.current_provider == "app":
+                web_sec.display = False
+                app_sec.display = True
+            else:
+                web_sec.display = True
+                app_sec.display = False
+        except Exception:
+            pass
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        bid = event.button.id
+        if bid == "btn_ai_preset_gemini":
+            self._select_preset("gemini")
+        elif bid == "btn_ai_preset_chatgpt":
+            self._select_preset("chatgpt")
+        elif bid == "btn_ai_preset_perplexity":
+            self._select_preset("perplexity")
+        elif bid == "btn_ai_preset_custom":
+            self._select_preset("custom")
+        elif bid == "btn_ai_preset_app":
+            self._select_preset("app")
+        elif bid == "btn_ai_app_browse":
+            self.action_browse_app()
+        elif bid == "btn_ai_app_clear":
+            self.action_clear_app()
+        elif bid == "btn_ai_lang":
+            self.action_toggle_language()
+        elif bid == "btn_ai_save":
+            self.action_save()
+        elif bid == "btn_ai_cancel":
+            self.action_cancel()
+
+    def _select_preset(self, preset_key: str) -> None:
+        self.current_provider = preset_key
+        for p in ["gemini", "chatgpt", "perplexity", "custom", "app"]:
+            try:
+                b = self.query_one(f"#btn_ai_preset_{p}", Button)
+                b.variant = "primary" if p == preset_key else "default"
+            except Exception:
+                pass
+
+        self._update_section_visibility()
+
+        if preset_key in self.presets and preset_key not in ("custom", "app"):
+            template_url = self.presets[preset_key]["url_template"]
+            try:
+                inp = self.query_one("#inp_ai_url", Input)
+                inp.value = template_url
+            except Exception:
+                pass
+
+    def action_browse_app(self) -> None:
+        def browse_worker():
+            from core.win_dialogs import pick_file
+            chosen = pick_file(
+                dialog_title="Select Desktop AI App (.exe)",
+                filter_name="Executable (*.exe)",
+                filter_ext="*.exe"
+            )
+            if chosen and os.path.exists(chosen):
+                def update_path():
+                    self.current_app_path = chosen
+                    try:
+                        self.query_one("#ai_app_path_display", Static).update(chosen)
+                    except Exception:
+                        pass
+                self.app.call_from_thread(update_path)
+
+        import threading
+        threading.Thread(target=browse_worker, daemon=True, name="BrowseAiAppWorker").start()
+
+    def action_clear_app(self) -> None:
+        self.current_app_path = ""
+        try:
+            self.query_one("#ai_app_path_display", Static).update("(No desktop app configured)")
+        except Exception:
+            pass
+
+    def action_toggle_language(self) -> None:
+        self.current_language = "en" if self.current_language == "de" else "de"
+        try:
+            btn = self.query_one("#btn_ai_lang", Button)
+            btn.label = "🌐 Language: German (DE)" if self.current_language == "de" else "🌐 Language: English (EN)"
+        except Exception:
+            pass
+
+    def action_save(self) -> None:
+        from core.config import save_ai_explain_config
+        url = ""
+        try:
+            url = self.query_one("#inp_ai_url", Input).value.strip()
+        except Exception:
+            url = self.current_url
+        if not url:
+            url = self.presets.get(self.current_provider, {}).get("url_template", "https://gemini.google.com/app")
+
+        save_ai_explain_config({
+            "provider": self.current_provider,
+            "url_template": url,
+            "app_path": self.current_app_path if self.current_app_path else None,
+            "language": self.current_language,
+        })
+        self.app.notify("AI Explain configuration saved!", severity="information")
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
 
 
 class ThemeButton(Button):
@@ -4008,6 +4501,8 @@ class TaskDetailModal(ModalScreen[None]):
     BINDINGS = [
         Binding("o", "open_browser", "Open in browser"),
         Binding("d", "download_files", "Download files"),
+        Binding("a", "ai_explain", "Ai Explain"),
+        Binding("g", "agent_open", "Agent"),
         Binding("e", "toggle_status", "Toggle status"),
         Binding("l", "delete_task", "Hide"),
         Binding("w", "restore_task", "Restore"),
@@ -4066,6 +4561,8 @@ class TaskDetailModal(ModalScreen[None]):
                             yield Button("🗑️ Hide [L]", id="btn_det_delete", variant="error")
                         else:
                             yield Button("✨ Restore [W]", id="btn_det_restore", variant="warning")
+                    yield Button("🤖 Ai Explain [A]", id="btn_det_ai_explain", variant="warning")
+                    yield Button("🤖 Agent [G]", id="btn_det_agent", variant="primary")
                 yield Button("↩️ Close [ESC]", id="btn_det_close", variant="default")
 
 
@@ -4075,6 +4572,10 @@ class TaskDetailModal(ModalScreen[None]):
             self.action_open_browser()
         elif bid == "btn_det_download":
             self.action_download_files()
+        elif bid == "btn_det_ai_explain":
+            self.action_ai_explain()
+        elif bid == "btn_det_agent":
+            self.action_agent_open()
         elif bid == "btn_det_status":
             self.action_toggle_status()
         elif bid == "btn_det_delete":
@@ -4083,6 +4584,63 @@ class TaskDetailModal(ModalScreen[None]):
             self.action_restore_task()
         elif bid == "btn_det_close":
             self.action_close()
+
+    def action_agent_open(self) -> None:
+        from core.config import load_agent_coding_tool
+        tool_path = load_agent_coding_tool()
+        if not tool_path or not os.path.exists(tool_path):
+            self.app.notify(
+                "Please configure your Agentic Coding Tool in Settings first!",
+                title="🤖 Agent",
+                severity="warning"
+            )
+            return
+
+        def export_worker():
+            from core.win_dialogs import pick_directory
+            chosen_dir = pick_directory(dialog_title="Select Destination Folder for Agent Project")
+            if not chosen_dir:
+                return
+
+            def on_exported(success: bool, msg: str):
+                if success:
+                    self.app.notify(msg, title="🤖 Agent", severity="information")
+                else:
+                    self.app.notify(msg, title="🤖 Agent", severity="error")
+
+            from services.ai_agent_service import run_agent_workflow
+            success, files, msg = run_agent_workflow(
+                self.target_task,
+                self.mgr,
+                chosen_dir,
+                exe_path=tool_path,
+                launch_tool=True
+            )
+            self.app.call_from_thread(on_exported, success, msg)
+
+        import threading
+        threading.Thread(target=export_worker, daemon=True, name="AgentExportWorker").start()
+
+    def action_ai_explain(self) -> None:
+        try:
+            from services.ai_explain_service import open_ai_explain
+            from core.config import load_ai_explain_config
+            cfg = load_ai_explain_config()
+            success, prompt, target_dest = open_ai_explain(self.target_task)
+            if cfg.get("provider") == "app":
+                self.app.notify(
+                    "AI prompt copied to clipboard & Desktop App launched!",
+                    title="🤖 Ai Explain",
+                    severity="information"
+                )
+            else:
+                self.app.notify(
+                    "AI prompt copied to clipboard & opened in browser!",
+                    title="🤖 Ai Explain",
+                    severity="information"
+                )
+        except Exception as e:
+            self.app.notify(f"Could not launch Ai Explain: {e}", severity="error")
 
     def action_toggle_status(self) -> None:
         if self.target_task.platform not in ["manual", "custom"]:
@@ -7790,6 +8348,19 @@ class AufgabenDetectorApp(App):
                 save_untis_group(new_grp)
                 self.notify(f"WebUntis group set to {new_grp}.", severity="information")
                 self.action_open_settings()
+            elif action in ("ai_config_menu", "ai_explain_config"):
+                def on_ai_choice(choice: Optional[str]) -> None:
+                    if choice == "explain":
+                        def on_explain_done(saved: bool) -> None:
+                            self.action_open_settings()
+                        self.push_screen(AiExplainModal(), on_explain_done)
+                    elif choice == "agent":
+                        def on_agent_done(saved: bool) -> None:
+                            self.action_open_settings()
+                        self.push_screen(AiAgentConfigModal(), on_agent_done)
+                    else:
+                        self.action_open_settings()
+                self.push_screen(AiConfigChoiceModal(), on_ai_choice)
 
         self.push_screen(SettingsModal(), on_setting_chosen)
 

@@ -11,6 +11,53 @@ und dieses Projekt hält sich an [Semantic Versioning](https://semver.org/lang/d
 
 ---
 
+## [1.2.0] - 2026-10-22
+
+### Added
+- **Desktop App Linking in 'Ai Explain' (`AiExplainModal`, `open_ai_explain`)**:
+  - Unterstützung für die Verknüpfung lokaler Desktop-Anwendungen (`.exe`, z. B. Gemini Desktop App, ChatGPT Desktop App) direkt in AI Explain.
+  - Vordefiniertes Preset `Desktop App` mit nativer Windows Dateiauswahl (`pick_file`) und dynamischer Umschaltung zwischen Web-URL und App-Pfad.
+  - Beim Klick auf `Ai Explain [A]` wird der Prompt in die Zwischenablage kopiert und die Desktop-App als Hintergrundprozess gestartet.
+- **Vollständige englische Lokalisierung der AI-Konfiguration**:
+  - Sämtliche Dialoge, Titel, Labels, Hilfetexte, Buttons und Benachrichtigungen in `AiConfigChoiceModal`, `AiExplainModal`, `AiAgentConfigModal`, `SettingsModal` und `TaskDetailModal` wurden einheitlich auf Englisch umgestellt.
+- **'Ai Explain' Button & Integration (`TaskDetailModal`)**:
+  - Neuer Button `🤖 Ai Explain [A]` in der Detailansicht von Aufgaben (sowohl Moodle/Teams als auch manuelle Aufgaben), auslösbar per Mausklick oder Shortcut `[A]`.
+  - Generiert automatisch einen strukturierten, hochwertigen Prompt für KI-Modelle mit Fach, Titel, Fälligkeit, Lehrkraft, Aufgabenbeschreibung und vollständiger Auflistung aller beigefügten Dateianhänge.
+  - Multi-Level Clipboard-Kopieren (automatische Ablage in der System-Zwischenablage via `pyperclip` mit sicherem Windows ctypes / clip.exe Fallback).
+  - Öffnet die konfigurierte KI-Webseite im Standard-Browser mit direkter Parameter-Ersetzung für URL-Templates (`{prompt}`).
+- **AI Explain Konfigurationsdialog (`AiExplainModal`)**:
+  - Schnellauswahl vorkonfigurierter Provider-Vorlagen (Google Gemini, ChatGPT, Perplexity, Custom URL oder Desktop App .exe).
+  - Flexible Sprachauswahl für generierte Prompts (German oder English) per 1-Klick-Toggle.
+  - Persistente Speicherung in `config.json` unter `ai_explain_config`.
+- **Headless Agent CLI Subcommand `tasks explain`**:
+  - Aufruf über `tasks explain <id|index> [--lang de|en] [--copy-only] [--no-browser] [--json]`.
+  - Vollständige JSON- und Terminalausgabe für autonome Agenten und Skripte.
+- **'Agent' Button & Agentic Coding Tool Integration (`TaskDetailModal`)**:
+  - Neuer Button `🤖 Agent [G]` (Shortcut `[G]`) in der Aufgaben-Detailansicht.
+  - Lädt alle Anhänge und die `angabe.md` in einen frei wählbaren Ordner via Windows Folder Picker herunter.
+  - Kopiert automatisch den absoluten Pfad des Projektordners in die Zwischenablage (`Strg+V` im Coding Tool).
+  - Startet das konfigurierte Agentic Coding Tool (Antigravity, Cursor, VS Code etc.) als unabhängigen Hintergrundprozess ohne erzwungene Projekt-Neuerstellung.
+  - Zeigt einen Hinweis, falls noch kein Coding-Tool in den Einstellungen hinterlegt wurde.
+- **Zentralisiertes 'AI Configuration' Einstellungsmenü (`AiConfigChoiceModal` & `AiAgentConfigModal`)**:
+  - Zusammenfassung von AI Explain und AI Agent unter dem gemeinsamen Menüpunkt `🤖 AI Configuration` (Shortcut `[7]` / `[A]`).
+  - `AiAgentConfigModal`: Auswahl der Coding Tool `.exe` über den nativen Windows Datei-Explorer (`pick_file`) mit Zurücksetzen- und Speicherfunktion.
+- **Headless Agent CLI Subcommand `tasks agent`**:
+  - `tasks agent <id|index> [--dir <pfad>] [--no-launch] [--json]`.
+- 23 neue automatisierte Unit-Tests in `tests/test_ai_explain.py` und `tests/test_agent_feature.py` (Gesamtsuite: 317 Tests, 100 % Erfolgsquote).
+
+### Changed
+- **Scrollbarer Dialog & dynamische Scrollbar (`AiExplainModal`, `AiAgentConfigModal`)**:
+  - Konfigurationsdialoge wurden auf `VerticalScroll` mit `scrollbar-gutter: stable` und `max-height: 85%` umgestellt, wodurch eine vertikale Scrollbar eingeblendet wird, sobald der Dialoginhalt die Terminalhöhe übersteigt.
+  - Einheitliche Beschriftung der Abbruchbuttons auf `↩️ Back [ESC]` (statt „Close“).
+
+### Fixed
+- **Button-Abschneiden am unteren Rand von `AiExplainModal`**:
+  - Behebt ein Layoutproblem, bei dem die Buttons `Save` und `Back` bei kleineren Terminalhöhen (z. B. 24–25 Zeilen) über den unteren Dialogrand geschoben und abgeschnitten wurden.
+- **Unicode-Glyphen in Konsolenanzeige**:
+  - Ersetzung problematischer Flaggenemojis im Sprach-Toggle durch standardkonforme Bezeichnungen (`🌐 Language: German (DE)` / `🌐 Language: English (EN)`).
+
+---
+
 ## [1.1.0] - 2026-10-21
 
 ### Fixed
