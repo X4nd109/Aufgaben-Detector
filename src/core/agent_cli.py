@@ -425,6 +425,12 @@ Fast (<0.1s offline cache) & token-efficient CLI designed for AI agents.
       add <path> [--title]       Link a local folder path (auto-titled from folder)
       remove <id|index|name>     Remove linked directory
 
+  tasks skill [sync|status] [--target PATH] [--json]
+    Manage global Antigravity / Agent skill.
+    Subcommands:
+      sync (default)             Install/sync skill to ~/.gemini/config/skills/tasks/
+      status                     Check installation status and sync state
+
   tasks sync [--deep] [--json]
     Perform live network sync with Moodle & Teams in background/terminal.
 
@@ -433,7 +439,7 @@ Fast (<0.1s offline cache) & token-efficient CLI designed for AI agents.
 
 ## Shorthand Flags
   All commands can also be called as flags:
-  `tasks -list`, `tasks --list`, `tasks -open sesd`, `tasks -courses`, `tasks -show 1`, `tasks -sync`, `tasks -dirs`
+  `tasks -list`, `tasks --list`, `tasks -open sesd`, `tasks -courses`, `tasks -show 1`, `tasks -sync`, `tasks -dirs`, `tasks -skill`
 """
 
 
@@ -494,6 +500,8 @@ def normalize_argv(argv: List[str]) -> List[str]:
             "--open": "open", "-open": "open",
             "--course": "open", "-course": "open",
             "--courses": "courses", "-courses": "courses",
+            "--skill": "skill", "-skill": "skill",
+            "--skills": "skill", "-skills": "skill",
         }
 
         if i == 0 and lower in flag_to_cmd:
@@ -523,7 +531,8 @@ def is_agent_cli_command(argv: List[str]) -> bool:
         "sync", "guide", "agent-guide", "help",
         "open", "course", "courses", "courselist",
         "books", "book", "schulbuch", "schulbücher",
-        "dirs", "dir", "directories", "folder", "folders", "ordner"
+        "dirs", "dir", "directories", "folder", "folders", "ordner",
+        "skill", "skills"
     }
 
     if first in known_commands:
@@ -541,7 +550,8 @@ def is_agent_cli_command(argv: List[str]) -> bool:
         "-help", "--help", "-h",
         "-open", "--open", "-courses", "--courses", "-course", "--course",
         "-books", "--books", "-book", "--book",
-        "-dirs", "--dirs", "-dir", "--dir", "-folder", "--folder"
+        "-dirs", "--dirs", "-dir", "--dir", "-folder", "--folder",
+        "-skill", "--skill", "-skills", "--skills"
     ]
     return any(first.startswith(p) for p in flag_prefixes)
 
@@ -1154,6 +1164,12 @@ def run_agent_cli(argv: List[str]) -> int:
     if command in ["dirs", "dir", "directories", "folder", "folders", "ordner"]:
         return handle_dirs_command(sub_args)
 
+    # ─────────────────────────────────────────────────────────────────
+    # 12. SKILL (Sync/Status of Agent Skill)
+    # ─────────────────────────────────────────────────────────────────
+    if command in ["skill", "skills"]:
+        return handle_skill_command(sub_args)
+
     # Unbekannter Befehl
     print(f"Unknown command: '{command}'. Use 'tasks guide' or 'tasks --help' for available commands.")
     return 1
@@ -1535,3 +1551,114 @@ def handle_dirs_command(sub_args: List[str]) -> int:
 
     print(f"Unknown action: '{action}'. Available: list, open, add, remove")
     return 1
+
+
+def handle_skill_command(sub_args: List[str]) -> int:
+    """Manages syncing and status of the global Antigravity/Agent skill."""
+    parser = argparse.ArgumentParser(prog="tasks skill", add_help=False)
+    parser.add_argument("action", nargs="?", default="sync", help="sync, install, update, status, check")
+    parser.add_argument("--target", default="", help="Custom target directory for the skill (defaults to ~/.gemini/config/skills/tasks)")
+    parser.add_argument("--json", action="store_true", help="JSON output")
+    args, _ = parser.parse_known_args(sub_args)
+
+    action = (args.action or "sync").lower()
+    if action not in ["sync", "install", "update", "status", "check", "info"]:
+        action = "sync"
+
+    # Ermittle Quell-Skillverzeichnis
+    try:
+        from config import WORKSPACE_DIR
+    except ImportError:
+        WORKSPACE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    source_skill_file = os.path.join(WORKSPACE_DIR, "skills", "tasks", "SKILL.md")
+    if not os.path.exists(source_skill_file):
+        # Fallback relative zu dieser Datei
+        source_skill_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "skills", "tasks", "SKILL.md"))
+
+    # Zielverzeichnis: Standardmäßig ~/.gemini/config/skills/tasks
+    if args.target:
+        target_dir = os.path.abspath(args.target)
+    else:
+        user_home = os.environ.get("USERPROFILE") or os.path.expanduser("~")
+        target_dir = os.path.join(user_home, ".gemini", "config", "skills", "tasks")
+
+    target_skill_file = os.path.join(target_dir, "SKILL.md")
+
+    if action in ["status", "check", "info"]:
+        exists = os.path.exists(target_skill_file)
+        in_sync = False
+        source_exists = os.path.exists(source_skill_file)
+        if exists and source_exists:
+            try:
+                with open(source_skill_file, "r", encoding="utf-8") as f_s, open(target_skill_file, "r", encoding="utf-8") as f_t:
+                    in_sync = (f_s.read() == f_t.read())
+            except Exception:
+                in_sync = False
+
+        if args.json:
+            print(json.dumps({
+                "installed": exists,
+                "in_sync": in_sync,
+                "source_file": source_skill_file if source_exists else None,
+                "target_file": target_skill_file,
+                "target_dir": target_dir
+            }, ensure_ascii=False, indent=2))
+        else:
+            if not source_exists:
+                print(f"Warning: Source skill not found at '{source_skill_file}'.")
+            if exists:
+                status_str = "in sync with repo" if in_sync else "outdated / differs from repo"
+                print(f"✓ tasks skill is installed at: {target_skill_file} ({status_str})")
+            else:
+                print(f"Notice: tasks skill is not installed yet. Run 'tasks skill sync' to install.")
+        return 0
+
+    # action in ["sync", "install", "update"]
+    if not os.path.exists(source_skill_file):
+        msg = f"Error: Source skill file not found at: '{source_skill_file}'"
+        if args.json:
+            print(json.dumps({"error": msg, "success": False}, ensure_ascii=False))
+        else:
+            print(msg)
+        return 1
+
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+        import shutil
+        shutil.copy2(source_skill_file, target_skill_file)
+
+        # Zusätzliche Dateien/Ordner aus dem Quellverzeichnis synchronisieren
+        source_dir = os.path.dirname(source_skill_file)
+        for item in os.listdir(source_dir):
+            if item == "SKILL.md":
+                continue
+            s_item = os.path.join(source_dir, item)
+            t_item = os.path.join(target_dir, item)
+            if os.path.isdir(s_item):
+                if os.path.exists(t_item):
+                    shutil.rmtree(t_item, ignore_errors=True)
+                shutil.copytree(s_item, t_item)
+            elif os.path.isfile(s_item):
+                shutil.copy2(s_item, t_item)
+
+        if args.json:
+            print(json.dumps({
+                "success": True,
+                "action": "synced",
+                "source_file": source_skill_file,
+                "target_file": target_skill_file,
+                "target_dir": target_dir
+            }, ensure_ascii=False, indent=2))
+        else:
+            print(f"✓ Successfully synced tasks skill to:")
+            print(f"  {target_skill_file}")
+            print(f"  Slash command: /tasks")
+        return 0
+    except Exception as e:
+        msg = f"Error syncing skill: {e}"
+        if args.json:
+            print(json.dumps({"error": msg, "success": False}, ensure_ascii=False))
+        else:
+            print(msg)
+        return 1

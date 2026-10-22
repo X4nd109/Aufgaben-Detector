@@ -11,6 +11,24 @@ und dieses Projekt hält sich an [Semantic Versioning](https://semver.org/lang/d
 
 ---
 
+## [1.2.1] - 2026-10-22
+
+### Added
+- **Globaler 'tasks' Agent-Skill (`skills/tasks/SKILL.md`)**:
+  - Extrem schlanker, token-effizienter Skill speziell für autonome Agenten (Antigravity, Claude Code, Cursor).
+  - Optimiert für manuelle Aktivierung über Slash-Command `/tasks` (kein unaufgeforderter Prompt-Overhead).
+  - Volle Unterstützung aller Textmodus-Befehle (`tasks list`, `tasks show`, `tasks download`, `tasks done`, `tasks books`, `tasks dirs`, `tasks open`, `tasks sync`) mit Fokus auf `--json`.
+- **CLI-Befehl `tasks skill [sync|status]`**:
+  - `tasks skill sync [--target <pfad>] [--json]`: Installiert oder aktualisiert den Skill direkt im globalen Antigravity Skill-Verzeichnis (`~/.gemini/config/skills/tasks/SKILL.md`).
+  - `tasks skill status [--json]`: Überprüft, ob der Skill global installiert und inhaltlich mit dem Projekt-Repository synchron ist.
+  - Subcommands und Flag-Aliase: `-skill`, `--skill`.
+- **Installer-Konfiguration**:
+  - Aufnahme von `skills` in `INCLUDE_DIRS` in `installer/build_installer.py`.
+- **Automatisierte Unit-Tests**:
+  - Neue Tests für `tasks skill sync` und `tasks skill status` in `tests/test_agent_cli.py`.
+
+---
+
 ## [1.2.0] - 2026-10-22
 
 ### Added

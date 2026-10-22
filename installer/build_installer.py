@@ -73,6 +73,7 @@ INCLUDE_FILES = [
 INCLUDE_DIRS = [
     "assets",
     "scripts",
+    "skills",
     "src",
 ]
 

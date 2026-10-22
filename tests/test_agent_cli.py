@@ -77,6 +77,8 @@ class TestAgentCLI(unittest.TestCase):
         self.assertEqual(normalize_argv(["--guide"]), ["guide"])
         self.assertEqual(normalize_argv(["-h"]), ["guide"])
         self.assertEqual(normalize_argv(["--help"]), ["guide"])
+        self.assertEqual(normalize_argv(["-skill"]), ["skill"])
+        self.assertEqual(normalize_argv(["--skill"]), ["skill"])
         self.assertEqual(normalize_argv(["--json"]), ["list", "--json"])
         self.assertEqual(normalize_argv(["-json"]), ["list", "--json"])
 
@@ -96,6 +98,9 @@ class TestAgentCLI(unittest.TestCase):
         self.assertTrue(is_agent_cli_command(["guide"]))
         self.assertTrue(is_agent_cli_command(["--help"]))
         self.assertTrue(is_agent_cli_command(["-h"]))
+        self.assertTrue(is_agent_cli_command(["skill"]))
+        self.assertTrue(is_agent_cli_command(["-skill"]))
+        self.assertTrue(is_agent_cli_command(["--skill"]))
         self.assertTrue(is_agent_cli_command(["--json"]))
 
         self.assertFalse(is_agent_cli_command([]))
@@ -230,6 +235,35 @@ class TestAgentCLI(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("Opening [Moodle]", mock_stdout.getvalue())
         self.assertIn("SESD", mock_stdout.getvalue())
+
+
+    def test_run_agent_cli_skill_sync_and_status(self):
+        """Testet 'tasks skill sync' und 'tasks skill status'."""
+        import tempfile
+        import shutil
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # 1. Status vor der Installation (nicht installiert)
+            with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+                exit_code = run_agent_cli(["skill", "status", "--target", tmpdir, "--json"])
+                self.assertEqual(exit_code, 0)
+                data = json.loads(mock_stdout.getvalue())
+                self.assertFalse(data.get("installed"))
+
+            # 2. Installation / Sync
+            with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+                exit_code = run_agent_cli(["skill", "sync", "--target", tmpdir, "--json"])
+                self.assertEqual(exit_code, 0)
+                data = json.loads(mock_stdout.getvalue())
+                self.assertTrue(data.get("success"))
+                self.assertTrue(os.path.exists(os.path.join(tmpdir, "SKILL.md")))
+
+            # 3. Status nach Installation (installiert und in sync)
+            with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+                exit_code = run_agent_cli(["skill", "status", "--target", tmpdir, "--json"])
+                self.assertEqual(exit_code, 0)
+                data = json.loads(mock_stdout.getvalue())
+                self.assertTrue(data.get("installed"))
+                self.assertTrue(data.get("in_sync"))
 
 
 if __name__ == "__main__":

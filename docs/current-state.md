@@ -1,11 +1,24 @@
 # Current Project State & Session Handoff — Aufgaben-Detector
 
 > **Last Updated**: 2026-10-22  
-> **Active Milestone**: Milestone 4 — AI Explain, Agentic Coding Tool Integration & Desktop App Linking (v1.2.0)
+> **Active Milestone**: Release v1.2.1 — Global 'tasks' Agent-Skill & CLI Sync Command
 
 ---
 
 ## 1. Completed Tasks & Milestones
+
+- [x] **Release v1.2.1 — Global 'tasks' Agent-Skill & 'tasks skill sync' CLI-Befehl**:
+  - **Schlanker, token-effizienter Skill (`skills/tasks/SKILL.md`)**:
+    - Optimiert für manuelle Aktivierung über Slash-Command `/tasks` (kein unaufgeforderter Prompt-Overhead).
+    - Schnelle <0.1s Cache-Abfragen mit deterministischer JSON-Struktur (`--json`) für alle Agentic Coding Tools (Antigravity, Claude Code, Cursor).
+    - Dokumentiert die Kernbefehle: `tasks list`, `tasks show`, `tasks download`, `tasks done`, `tasks books`, `tasks dirs`, `tasks open`, `tasks sync`.
+  - **Integrierter Sync- & Status-Befehl (`tasks skill [sync|status]`)**:
+    - `tasks skill sync [--target <pfad>] [--json]`: Installiert oder aktualisiert den Skill direkt in Antigravitys globales Skill-Verzeichnis (`~/.gemini/config/skills/tasks/SKILL.md`).
+    - `tasks skill status [--json]`: Prüft den Installationsstatus und ob die globale Version mit dem Repository synchron ist.
+    - Flag-Aliase: `-skill`, `--skill`.
+  - **Packaging & Tests**:
+    - `skills/` Verzeichnis in `installer/build_installer.py` aufgenommen.
+    - Vollständige Testabdeckung in `tests/test_agent_cli.py` (318 Tests in der Gesamtsuite erfolgreich).
 
 - [x] **Release v1.2.0 — AI Explain, Agentic Coding Tool Integration & Desktop App Linking**:
   - **'Ai Explain' Button & Workflows (`TaskDetailModal`, `AiExplainModal`, `open_ai_explain`)**:
